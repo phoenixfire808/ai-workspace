@@ -15,7 +15,7 @@ import {
   useEdgesState,
   useNodesState,
 } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
 
 import AgentNode from "./nodes/AgentNode";
 import ApprovalReview from "./ApprovalReview";
@@ -77,6 +77,13 @@ type PendingApproval = ApprovalPreview & (
   | { kind: "action"; resource: LibraryResource; arguments: Record<string, unknown> }
   | { kind: "graph" }
 );
+
+const LAYOUT_STORAGE_KEY = "mo-workspace-panel-layout-v1";
+const DEFAULT_LEFT_PANEL = 320;
+const DEFAULT_RIGHT_PANEL = 340;
+const MIN_LEFT_PANEL = 240;
+const MIN_RIGHT_PANEL = 280;
+const MIN_CANVAS = 420;
 
 const initialNodes: CanvasNode[] = [
   {
@@ -198,6 +205,83 @@ export default function Canvas() {
   const [runLines, setRunLines] = useState<RunLine[]>([]);
   const [health, setHealth] = useState<Health | null>(null);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
+  const [leftPanelWidth, setLeftPanelWidth] = useState(DEFAULT_LEFT_PANEL);
+  const [rightPanelWidth, setRightPanelWidth] = useState(DEFAULT_RIGHT_PANEL);
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
+  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
+  const [layoutHydrated, setLayoutHydrated] = useState(false);
+  const [stackedLayout, setStackedLayout] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(LAYOUT_STORAGE_KEY) ?? "null") as Record<string, unknown> | null;
+      if (saved) {
+        if (typeof saved.leftWidth === "number") setLeftPanelWidth(Math.min(600, Math.max(MIN_LEFT_PANEL, saved.leftWidth)));
+        if (typeof saved.rightWidth === "number") setRightPanelWidth(Math.min(650, Math.max(MIN_RIGHT_PANEL, saved.rightWidth)));
+        setLeftPanelCollapsed(saved.leftCollapsed === true);
+        setRightPanelCollapsed(saved.rightCollapsed === true);
+      }
+    } catch { /* Invalid local layout falls back to defaults. */ }
+    const media = window.matchMedia("(max-width: 880px)");
+    const syncStacked = () => setStackedLayout(media.matches);
+    syncStacked();
+    media.addEventListener("change", syncStacked);
+    setLayoutHydrated(true);
+    return () => media.removeEventListener("change", syncStacked);
+  }, []);
+
+  useEffect(() => {
+    if (!layoutHydrated) return;
+    window.localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify({
+      leftWidth: leftPanelWidth,
+      rightWidth: rightPanelWidth,
+      leftCollapsed: leftPanelCollapsed,
+      rightCollapsed: rightPanelCollapsed,
+    }));
+  }, [layoutHydrated, leftPanelCollapsed, leftPanelWidth, rightPanelCollapsed, rightPanelWidth]);
+
+  const resizePanel = useCallback((side: "left" | "right", requested: number) => {
+    const viewport = window.innerWidth;
+    const opposite = side === "left"
+      ? (rightPanelCollapsed ? 36 : rightPanelWidth)
+      : (leftPanelCollapsed ? 36 : leftPanelWidth);
+    const minimum = side === "left" ? MIN_LEFT_PANEL : MIN_RIGHT_PANEL;
+    const configuredMaximum = side === "left" ? 600 : 650;
+    const availableMaximum = Math.max(minimum, viewport - opposite - MIN_CANVAS - 16);
+    const next = Math.min(configuredMaximum, availableMaximum, Math.max(minimum, requested));
+    if (side === "left") setLeftPanelWidth(next); else setRightPanelWidth(next);
+  }, [leftPanelCollapsed, leftPanelWidth, rightPanelCollapsed, rightPanelWidth]);
+
+  const beginPanelResize = useCallback((side: "left" | "right", event: ReactPointerEvent<HTMLDivElement>) => {
+    if (stackedLayout) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = side === "left" ? leftPanelWidth : rightPanelWidth;
+    document.body.classList.add("panel-resizing");
+    const move = (pointer: PointerEvent) => resizePanel(side, startWidth + (side === "left" ? pointer.clientX - startX : startX - pointer.clientX));
+    const stop = () => {
+      document.body.classList.remove("panel-resizing");
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+  }, [leftPanelWidth, resizePanel, rightPanelWidth, stackedLayout]);
+
+  const resizePanelByKeyboard = useCallback((side: "left" | "right", key: string) => {
+    if (key !== "ArrowLeft" && key !== "ArrowRight") return;
+    const current = side === "left" ? leftPanelWidth : rightPanelWidth;
+    const direction = key === "ArrowRight" ? 1 : -1;
+    resizePanel(side, current + (side === "left" ? direction : -direction) * 20);
+  }, [leftPanelWidth, resizePanel, rightPanelWidth]);
+
+  const resetPanelLayout = useCallback(() => {
+    setLeftPanelWidth(DEFAULT_LEFT_PANEL);
+    setRightPanelWidth(DEFAULT_RIGHT_PANEL);
+    setLeftPanelCollapsed(false);
+    setRightPanelCollapsed(false);
+    setNotice("Workspace panel layout reset.");
+  }, []);
 
   const updateNodeData = useCallback((id: string, patch: Record<string, unknown>) => {
     setNodes((current) =>
@@ -505,6 +589,14 @@ export default function Canvas() {
         ? health.lfm_ready
         : true
   ));
+  const effectiveLeftCollapsed = leftPanelCollapsed && !stackedLayout;
+  const effectiveRightCollapsed = rightPanelCollapsed && !stackedLayout;
+  const workspaceStyle = {
+    "--left-panel-width": `${effectiveLeftCollapsed ? 36 : leftPanelWidth}px`,
+    "--right-panel-width": `${effectiveRightCollapsed ? 36 : rightPanelWidth}px`,
+    "--left-splitter-width": effectiveLeftCollapsed ? "0px" : "7px",
+    "--right-splitter-width": effectiveRightCollapsed ? "0px" : "7px",
+  } as CSSProperties;
 
   return (
     <div className="workspace-shell">
@@ -532,8 +624,11 @@ export default function Canvas() {
         </div>
       </header>
 
-      <div className="workspace-body">
-        <aside className="left-panel panel-surface">
+      <div className="workspace-body" style={workspaceStyle}>
+        {effectiveLeftCollapsed ? (
+          <button className="panel-reopen panel-reopen-left" type="button" onClick={() => setLeftPanelCollapsed(false)} aria-label="Reopen left panel" title="Reopen library panel">›</button>
+        ) : <aside className="left-panel panel-surface">
+          <div className="panel-utility"><span>{Math.round(leftPanelWidth)} px</span><div><button type="button" onClick={resetPanelLayout}>Reset</button><button type="button" onClick={() => setLeftPanelCollapsed(true)} aria-label="Collapse left panel">‹</button></div></div>
           <LibraryPanel onAdd={addLibraryResource} onRun={(resource, args) => void runLibraryResource(resource, args)} onDeploy={(resource) => void deployTemplate(resource)} />
           <div className="panel-divider" />
           <div className="panel-heading">
@@ -563,7 +658,9 @@ export default function Canvas() {
           <div className="mini-section-title">HARDWARE LANES</div>
           <div className="hardware-row"><span className="hardware-chip gpu-purple">GPU 1</span><span>RTX 2070 Super</span><small>Nanbeige + STT</small></div>
           <div className="hardware-row"><span className="hardware-chip gpu-blue">GPU 0</span><span>RTX 5060 Ti</span><small>Available</small></div>
-        </aside>
+        </aside>}
+
+        <div className={`panel-splitter panel-splitter-left${effectiveLeftCollapsed ? " is-hidden" : ""}`} role="separator" aria-label="Resize left panel" aria-orientation="vertical" tabIndex={effectiveLeftCollapsed ? -1 : 0} onPointerDown={(event) => beginPanelResize("left", event)} onKeyDown={(event) => resizePanelByKeyboard("left", event.key)}><span /></div>
 
         <main className="canvas-wrap" onDrop={onDrop} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}>
           <div className="canvas-toolbar">
@@ -595,7 +692,12 @@ export default function Canvas() {
           )}
         </main>
 
-        <aside className="right-panel panel-surface">
+        <div className={`panel-splitter panel-splitter-right${effectiveRightCollapsed ? " is-hidden" : ""}`} role="separator" aria-label="Resize right panel" aria-orientation="vertical" tabIndex={effectiveRightCollapsed ? -1 : 0} onPointerDown={(event) => beginPanelResize("right", event)} onKeyDown={(event) => resizePanelByKeyboard("right", event.key)}><span /></div>
+
+        {effectiveRightCollapsed ? (
+          <button className="panel-reopen panel-reopen-right" type="button" onClick={() => setRightPanelCollapsed(false)} aria-label="Reopen right panel" title="Reopen run panel">‹</button>
+        ) : <aside className="right-panel panel-surface">
+          <div className="panel-utility"><span>{Math.round(rightPanelWidth)} px</span><div><button type="button" onClick={resetPanelLayout}>Reset</button><button type="button" onClick={() => setRightPanelCollapsed(true)} aria-label="Collapse right panel">›</button></div></div>
           <div className="panel-heading"><div><span className="eyebrow">RUN CONTROL</span><h2>Input / output</h2></div><span className={`status-badge status-${runStatus}`}>{statusLabel}</span></div>
           <label className="control-label" htmlFor="workflow-input">Workflow input</label>
           <textarea id="workflow-input" className="control-textarea" value={inputText} onChange={(event) => setInputText(event.target.value)} rows={7} />
@@ -617,7 +719,7 @@ export default function Canvas() {
           <ChatPanel />
           <div className="panel-divider" />
           <ControlCenterPanel />
-        </aside>
+        </aside>}
       </div>
       {pendingApproval && <ApprovalReview
         title={pendingApproval.kind === "graph" ? "Approve workflow actions" : `Approve ${pendingApproval.resource.label}`}

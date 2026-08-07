@@ -28,9 +28,11 @@ export default function LibraryPanel({ onAdd, onRun, onDeploy }: { onAdd: (resou
     <p className="panel-copy">Add, run, or deploy every governed local option.</p>
     <select className="control-select" value={category} onChange={(event) => { setCategory(event.target.value as typeof category); setSelectedId(""); }} aria-label="Library category">{categories.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
     <input className="control-input library-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search tools, models, skills…" aria-label="Search library" />
-    <select className="control-select" size={Math.min(7, Math.max(3, filtered.length))} value={selectedId} onChange={(event) => { setSelectedId(event.target.value); setArgumentsText("{}"); }} aria-label="Local resources">
-      {filtered.map((item) => <option key={item.resource_id} value={item.resource_id} disabled={!item.ready}>{item.label}{!item.ready ? ` · ${item.disabled_reason ?? "offline"}` : item.requires_approval ? " · approve" : ""}</option>)}
-    </select>
+    <div className="library-list-resizer" title="Drag the lower-right corner to show more or fewer options">
+      <select className="control-select library-resource-list" size={Math.min(16, Math.max(12, filtered.length))} value={selectedId} onChange={(event) => { setSelectedId(event.target.value); setArgumentsText("{}"); }} aria-label="Local resources">
+        {filtered.map((item) => <option key={item.resource_id} value={item.resource_id} disabled={!item.ready}>{item.label}{!item.ready ? ` · ${item.disabled_reason ?? "offline"}` : item.requires_approval ? " · approve" : ""}</option>)}
+      </select>
+    </div>
     {selected && <div className="library-detail"><strong>{selected.label}</strong><small>{selected.category} · {selected.scope}</small><p>{selected.description}</p></div>}
     {selected?.capabilities.includes("run_now") && <textarea className="control-textarea library-args" rows={3} value={argumentsText} onChange={(event) => setArgumentsText(event.target.value)} aria-label="Quick run arguments JSON" />}
     <div className="library-actions">
