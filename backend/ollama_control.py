@@ -8,7 +8,7 @@ import httpx
 from pydantic import BaseModel, Field
 
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
-DEFAULT_OLLAMA_MODEL = "hf.co/DavidAU/Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-NEO-MAX-MTP-GGUF:Q4_K_M"
+DEFAULT_OLLAMA_MODEL = "hf.co/mradermacher/LFM2.5-2.6B-UNCENSORED-ABLITERATED-PHILADELPHIA-CLASS-GGUF:Q4_K_M"
 
 
 class OllamaModel(BaseModel):
@@ -104,7 +104,7 @@ def list_ollama_models() -> dict[str, Any]:
         models.append(model.model_dump(mode="json"))
     names = [item["name"] for item in models]
     configured = os.getenv("OLLAMA_MODEL", "").strip()
-    default_model = configured if configured in names else (names[0] if names else DEFAULT_OLLAMA_MODEL)
+    default_model = configured or DEFAULT_OLLAMA_MODEL
     return {
         "status": "ready",
         "failure_class": None,

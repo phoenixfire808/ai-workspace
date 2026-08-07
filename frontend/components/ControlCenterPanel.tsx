@@ -48,6 +48,15 @@ type OllamaInventory = {
   models: Array<{ name: string; size?: number | null; openai_advertised?: boolean }>;
 };
 
+type WorkspaceModelSetting = {
+  provider: "ollama";
+  model: string;
+  hardware_profile_id: string;
+  fallback_policy: "explicit_only";
+  persisted: boolean;
+  mutation: string;
+};
+
 type EndpointProfile = { id: string; name: string; provider_kind: string; base_url: string; credential_alias: string; credential_configured: boolean; settings: Record<string, unknown>; enabled: boolean; managed: boolean };
 type EndpointPreflight = { ready: boolean; reason: string; selected_model?: string; exact_model_available?: boolean; credential_configured?: boolean; fallback_policy?: string; mutation?: string };
 type GpuDevice = { index: number; uuid: string; name: string; memory_total_mb: number; memory_free_mb: number; compute_capability: string };
@@ -74,6 +83,9 @@ export default function ControlCenterPanel() {
   const [inventory, setInventory] = useState<UpgradeInventory | null>(null);
   const [upgradePreflight, setUpgradePreflight] = useState<UpgradePreflight | null>(null);
   const [ollamaInventory, setOllamaInventory] = useState<OllamaInventory | null>(null);
+  const [workspaceModel, setWorkspaceModel] = useState<WorkspaceModelSetting | null>(null);
+  const [workspaceModelDraft, setWorkspaceModelDraft] = useState("");
+  const [workspaceHardwareDraft, setWorkspaceHardwareDraft] = useState("auto");
   const [endpoints, setEndpoints] = useState<EndpointProfile[]>([]);
   const [selectedEndpoint, setSelectedEndpoint] = useState("");
   const [endpointModel, setEndpointModel] = useState("");
@@ -103,14 +115,18 @@ export default function ControlCenterPanel() {
       readJson<{ profiles: RuntimeProfile[] }>(`${API_URL}/api/runtime/profiles`),
       refreshUpgrade(),
       readJson<OllamaInventory>(`${API_URL}/api/ollama/models`),
+      readJson<WorkspaceModelSetting>(`${API_URL}/api/settings/model`),
       readJson<{ profiles: EndpointProfile[] }>(`${API_URL}/api/model-endpoints`),
       readJson<{ devices: GpuDevice[]; processes: GpuProcess[] }>(`${API_URL}/api/hardware/gpus`),
       readJson<{ profiles: HardwareProfile[] }>(`${API_URL}/api/hardware/profiles`),
-    ]).then(([runtime, _upgrade, ollama, endpointInventory, gpuInventory, hardwareInventory]) => {
+    ]).then(([runtime, _upgrade, ollama, modelSetting, endpointInventory, gpuInventory, hardwareInventory]) => {
       if (cancelled) return;
       setProfiles(runtime.profiles);
       setSelectedProfile(runtime.profiles[0]?.profile_id ?? "");
       setOllamaInventory(ollama);
+      setWorkspaceModel(modelSetting);
+      setWorkspaceModelDraft(modelSetting.model);
+      setWorkspaceHardwareDraft(modelSetting.hardware_profile_id);
       setEndpoints(endpointInventory.profiles);
       setSelectedEndpoint(endpointInventory.profiles.find((item) => item.provider_kind === "openrouter")?.id ?? endpointInventory.profiles[0]?.id ?? "");
       setGpus(gpuInventory.devices);
@@ -141,6 +157,23 @@ export default function ControlCenterPanel() {
     setEndpointEnabled(endpoint.enabled);
     setEndpointPreflight(null);
   }, [endpoint]);
+
+  async function saveWorkspaceModel() {
+    setBusy(true); setNotice("");
+    try {
+      const saved = await readJson<WorkspaceModelSetting>(`${API_URL}/api/settings/model`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "ollama", model: workspaceModelDraft, hardware_profile_id: workspaceHardwareDraft, fallback_policy: "explicit_only" }),
+      });
+      setWorkspaceModel(saved);
+      setNotice("Global M⊕ model saved. Chat, Planner, Research, and Coder now resolve this exact model unless explicitly overridden.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Workspace model save failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function saveEndpoint() {
     if (!endpoint || endpoint.provider_kind !== "openrouter") return;
@@ -181,9 +214,26 @@ export default function ControlCenterPanel() {
     <section className="control-center">
       <div className="control-center-heading">
         <div><span className="eyebrow">OPERATIONS</span><h3>Control Center</h3></div>
-        <span className="control-lock">READ-ONLY</span>
+        <span className="control-lock">LOCAL SETTINGS</span>
       </div>
-      <p className="control-copy">Profiles, preflight, terminal classification, and upgrade inventory stay local and mutation-free.</p>
+      <p className="control-copy">Choose one persistent local model; runtime inventory, terminal classification, and upgrade checks remain bounded.</p>
+
+      <div className="mini-section-title">WORKSPACE MODEL · GLOBAL DEFAULT</div>
+      <label className="control-label" htmlFor="workspace-model">Installed Ollama model</label>
+      <select id="workspace-model" className="control-select" value={workspaceModelDraft} onChange={(event) => setWorkspaceModelDraft(event.target.value)}>
+        {(ollamaInventory?.models ?? []).map((model) => <option key={model.name} value={model.name}>{model.name}</option>)}
+      </select>
+      <label className="control-label" htmlFor="workspace-hardware">Hardware profile</label>
+      <select id="workspace-hardware" className="control-select" value={workspaceHardwareDraft} onChange={(event) => setWorkspaceHardwareDraft(event.target.value)}>
+        {hardwareProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} · {profile.mode}</option>)}
+      </select>
+      <div className="profile-card">
+        <div className="profile-card-title"><strong>Ollama · exact ID</strong><span className={stateClass(workspaceModel?.persisted ? "ready" : "not-ready")}>{workspaceModel?.persisted ? "saved" : "default"}</span></div>
+        <small>Resolution: node → workflow → global · fallback: explicit_only</small>
+        <button className="button button-primary full-width" type="button" disabled={busy || !workspaceModelDraft} onClick={() => void saveWorkspaceModel()}>Save global model</button>
+      </div>
+
+      <div className="panel-divider" />
 
       <label className="control-label" htmlFor="runtime-profile">Runtime profile</label>
       <select id="runtime-profile" className="control-select" value={selectedProfile} onChange={(event) => setSelectedProfile(event.target.value)}>

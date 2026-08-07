@@ -37,7 +37,7 @@ export default function PlannerNode({ data }: NodeProps<WorkspaceNode>) {
         </select>
       </NodeField>
       <ModelRouteSettings data={data} />
-      <div className="node-note">Uses the explicit local Nanbeige route. Planner output is passed to the next node; raw run logs stay metadata-only.</div>
+      <div className="node-note">Uses the saved global M⊕ model unless the workflow supplies an explicit override. Planner output is passed to the next node; raw run logs stay metadata-only.</div>
     </NodeFrame>
   );
 }

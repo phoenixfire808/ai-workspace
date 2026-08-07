@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from .database import HardwareProfile, ModelEndpointProfile, SessionLocal
+from .ollama_control import DEFAULT_OLLAMA_MODEL
 
 ProviderKind = Literal["ollama", "ollama_cloud", "ollama_compatible", "openai_compatible", "openrouter"]
 HardwareMode = Literal["auto", "cpu", "single_gpu", "multi_gpu"]
@@ -41,9 +42,7 @@ class HardwareProfilePayload(BaseModel):
 
 
 _DEFAULT_ENDPOINTS = (
-    {"id": "local-ollama", "name": "Local Ollama", "provider_kind": "ollama", "base_url": "http://127.0.0.1:11434", "credential_alias": "", "settings": {"fallback_policy": "explicit_only", "keep_alive": "5m"}, "enabled": True, "managed": False},
-    {"id": "local-nanbeige", "name": "Nanbeige local route", "provider_kind": "openai_compatible", "base_url": "http://127.0.0.1:8080/v1", "credential_alias": "", "settings": {"model": "nanbeige4.2-3b-local", "fallback_policy": "explicit_only"}, "enabled": True, "managed": False},
-    {"id": "local-lfm", "name": "LFM local route", "provider_kind": "openai_compatible", "base_url": "http://127.0.0.1:1234/v1", "credential_alias": "", "settings": {"model": "lfm2.5-1.2b-instruct", "fallback_policy": "explicit_only"}, "enabled": False, "managed": False},
+    {"id": "local-ollama", "name": "M⊕ local Ollama", "provider_kind": "ollama", "base_url": "http://127.0.0.1:11434", "credential_alias": "", "settings": {"model": DEFAULT_OLLAMA_MODEL, "fallback_policy": "explicit_only", "keep_alive": "5m"}, "enabled": True, "managed": False},
     {"id": "ollama-cloud", "name": "Ollama Cloud direct", "provider_kind": "ollama_cloud", "base_url": "https://ollama.com", "credential_alias": "env:OLLAMA_API_KEY", "settings": {"fallback_policy": "explicit_only"}, "enabled": False, "managed": False},
     {"id": "openrouter", "name": "OpenRouter · explicit cloud route", "provider_kind": "openrouter", "base_url": "https://openrouter.ai/api/v1", "credential_alias": "env:OPENROUTER_API_KEY", "settings": {"model": "", "fallback_policy": "explicit_only", "x_title": "M⊕ AI Visual Workspace"}, "enabled": False, "managed": False},
 )

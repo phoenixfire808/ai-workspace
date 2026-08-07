@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .runtime_control import active_baseline_profile_id, preflight_runtime_profile
+from .model_settings import get_workspace_model_setting
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -24,23 +25,16 @@ def _present_item(item_id: str, label: str, path: Path, kind: str) -> dict[str, 
 
 
 def upgrade_inventory() -> dict[str, Any]:
-    lfm_path = Path(r"D:\AI\Models\LFM2.5-2.6B")
-    sm120_path = Path(r"D:\AI\Runtimes\nanbeige-workspace-launcher")
     items = [
         _present_item("workspace", "M⊕ workspace", PROJECT_ROOT, "application"),
         _present_item("backend-requirements", "Backend dependency manifest", PROJECT_ROOT / "backend" / "requirements.txt", "dependency-manifest"),
         _present_item("frontend-package", "Frontend dependency manifest", PROJECT_ROOT / "frontend" / "package.json", "dependency-manifest"),
-        _present_item("lfm-clone", "LiquidAI LFM2.5-2.6B clone", lfm_path, "model-artifact"),
-        _present_item("sm120-workspace-runtime", "SM120 Nanbeige workspace runtime artifacts", sm120_path, "runtime-artifact"),
+
     ]
     return {
         "mutation": "none",
         "items": items,
-        "preserved_baseline": {
-            "profile_id": active_baseline_profile_id(),
-            "model": "nanbeige4.2-3b-local",
-            "endpoint": "http://127.0.0.1:8080/v1",
-        },
+        "workspace_model": get_workspace_model_setting(),
         "upgrade_policy": {
             "downloads": "explicit-action-required",
             "builds": "explicit-action-required",

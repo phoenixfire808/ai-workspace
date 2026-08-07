@@ -93,6 +93,8 @@ Changing provider variables never creates automatic fallback. Nanbeige endpoint/
 
 Optional local settings are documented in `backend\.env.example`. `backend\.env` is loaded automatically without overriding values already present in the process environment, and is excluded by `.gitignore`.
 
+Database precedence is `WORKSPACE_DATABASE_URL` → legacy `DATABASE_URL` → `WORKSPACE_DB_PATH` → `backend/workspace.db`. Tests set `WORKSPACE_DATABASE_URL` before importing `backend.main`, so standalone and combined discovery use temporary SQLite databases instead of touching the live workspace database.
+
 ### 2. Frontend environment
 
 ```cmd
@@ -156,7 +158,9 @@ set LFM_MODEL=LFM2.5-2.6B
 
 Every LFM generation performs `/v1/models` preflight and fails closed on an unavailable endpoint or mismatched model. It never silently falls back to Nanbeige.
 
-## Runtime Control, Terminal Preview, and Upgrade Center
+## Option Catalog, Runtime Control, Terminal Preview, and Upgrade Center
+
+The right-hand **Option Catalog** is generated from the same typed registry used by `/api/options`, `/api/options/export.md`, validation tests, and the capability matrix. Phase 0 is intentionally read-only: it exposes each option's stable ID, safe default, scope, effect, approval class, persistence, evidence, privacy cost, restart impact, prerequisites, and rollback, but it cannot apply settings. Existing run, endpoint, hardware, terminal, upgrade, and feedback APIs remain authoritative until later parity-tested phases.
 
 The right-hand **Control Center** exposes named GPU/model profiles and read-only preflight. The `ollama-local-models` profile is the priority selection lane and lists exact IDs from local Ollama; the verified `nanbeige-rtx2070-super` profile remains the protected baseline. The approved RTX 5060 Ti M⊕ workspace target (`:8081` / `nanbeige4.2-3b-workspace`), dual-GPU review profile, and LFM experimental profile are data-only until an explicit activation workflow is designed and approved.
 
@@ -182,6 +186,12 @@ Useful API routes:
 - `POST /api/terminal/preview` — bounded no-execution command classification
 - `GET /api/upgrades/inventory` — local upgrade inventory, no downloads
 - `GET /api/upgrades/preflight` — manifest/disk/baseline readiness check
+- `GET /api/options` — validated read-only Phase 0 option definitions and control-surface coverage
+- `GET /api/options/export.md` — detailed Markdown generated from the same registry
+- `GET /api/capabilities/matrix` — nodes, resources, routes, approvals, and option evidence
+- `GET /api/model-endpoints` — explicit endpoint profiles; raw credential values are never returned
+- `GET /api/hardware/profiles` — requested hardware profiles, separate from observed placement
+- `GET /api/feedback` — local-only bug/feature drafts; publication remains separately gated
 - `GET /api/tasks`
 - `GET /api/agents`
 
@@ -217,7 +227,8 @@ The Python computation tool is a bounded same-user subprocess policy layer, not 
 After installation, perform the final consolidated pass:
 
 ```cmd
-backend\.venv\Scripts\python.exe -m py_compile backend\database.py backend\schema.py backend\graph.py backend\main.py
+backend\.venv\Scripts\python.exe -m unittest discover -s tests -v
+backend\.venv\Scripts\python.exe -m compileall -q backend tests
 cd frontend
 npm run typecheck
 npm run build

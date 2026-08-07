@@ -105,6 +105,6 @@ class FeedbackPublishPayload(BaseModel):
 class ChatStreamPayload(BaseModel):
     message: str = Field(min_length=1, max_length=200_000)
     project_id: str | None = Field(default=None, max_length=64)
-    active_hardware_lane: str = Field(default="shared-rtx-2070-super", max_length=120)
+    active_hardware_lane: str = Field(default="ollama-auto", max_length=120)
     approved_tools: list[str] = Field(default_factory=list, max_length=32)
     max_loops: int = Field(default=4, ge=1, le=8)

@@ -12,9 +12,10 @@ export default function CoderNode({ data }: NodeProps<WorkspaceNode>) {
   const configuredProvider = String(data.provider ?? "");
   const provider: ModelProvider = Object.prototype.hasOwnProperty.call(MODEL_OPTIONS, configuredProvider)
     ? (configuredProvider as ModelProvider)
-    : "nanbeige";
+    : "ollama";
   const model = String(data.model ?? MODEL_OPTIONS[provider].model);
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [globalModel, setGlobalModel] = useState("");
 
   useEffect(() => {
     if (provider !== "ollama") {
@@ -22,11 +23,14 @@ export default function CoderNode({ data }: NodeProps<WorkspaceNode>) {
       return;
     }
     let cancelled = false;
-    fetch(`${API_URL}/api/ollama/models`)
-      .then((response) => response.json())
-      .then((payload: { models?: Array<{ name?: string }> }) => {
+    Promise.all([
+      fetch(`${API_URL}/api/ollama/models`).then((response) => response.json()),
+      fetch(`${API_URL}/api/settings/model`).then((response) => response.json()),
+    ])
+      .then(([payload, setting]: [{ models?: Array<{ name?: string }> }, { model?: string }]) => {
         if (!cancelled) {
           setOllamaModels((payload.models ?? []).map((item) => String(item.name ?? "")).filter(Boolean));
+          setGlobalModel(String(setting.model ?? ""));
         }
       })
       .catch(() => {
@@ -37,7 +41,7 @@ export default function CoderNode({ data }: NodeProps<WorkspaceNode>) {
     };
   }, [provider]);
 
-  const selectedOllamaModel = model || ollamaModels[0] || "";
+  const selectedOllamaModel = model;
   return (
     <NodeFrame title="Coder model" subtitle="Local or explicitly configured provider" accent="node-coder">
       <NodeField label="Provider">
@@ -66,6 +70,7 @@ export default function CoderNode({ data }: NodeProps<WorkspaceNode>) {
             value={selectedOllamaModel}
             onChange={(event) => onChange?.({ model: event.target.value })}
           >
+            <option value="">Global default · {globalModel || "not configured"}</option>
             {model && !ollamaModels.includes(model) && <option value={model}>{model} (not installed)</option>}
             {ollamaModels.map((name) => <option key={name} value={name}>{name}</option>)}
           </select>
@@ -73,24 +78,12 @@ export default function CoderNode({ data }: NodeProps<WorkspaceNode>) {
           <input
             className="node-input nodrag"
             value={model}
-            readOnly={provider === "nanbeige" || provider === "lfm"}
             placeholder={provider === "ollama" ? "Waiting for local Ollama inventory…" : undefined}
             onChange={(event) => onChange?.({ model: event.target.value })}
           />
         )}
       </NodeField>
-      {provider === "nanbeige" && (
-        <NodeField label="Reasoning">
-          <select
-            className="node-input nodrag"
-            value={data.enable_thinking === false ? "off" : "on"}
-            onChange={(event) => onChange?.({ enable_thinking: event.target.value === "on" })}
-          >
-            <option value="on">Thinking enabled</option>
-            <option value="off">Fast response</option>
-          </select>
-        </NodeField>
-      )}
+
       <NodeField label="System prompt">
         <textarea
           className="node-input node-textarea nodrag"
@@ -101,12 +94,8 @@ export default function CoderNode({ data }: NodeProps<WorkspaceNode>) {
       </NodeField>
       <ModelRouteSettings data={data} />
       <div className="node-note">
-        {provider === "nanbeige"
-          ? "Exact local alias; endpoint stays outside the canvas."
-          : provider === "lfm"
-            ? "Explicit LFM2.5 agent option; requires its separate local runtime."
-          : provider === "ollama"
-            ? "Exact installed Ollama ID; the node never pulls or deletes models."
+        {provider === "ollama"
+            ? "Uses the saved global model unless an exact node override is selected."
           : provider === "openrouter"
             ? "Explicit OpenRouter route; configure the local credential alias before enabling it."
             : "API keys stay outside the canvas and are never serialized."}

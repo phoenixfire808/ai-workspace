@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any, Iterable, get_args
 
 from .library import capability_audit, library_resources
+from .options_registry import option_inventory
 from .schema import NodeType
 
 
@@ -49,6 +50,8 @@ ROUTE_PASS_EVIDENCE = {
     "/api/hermes/capability-audit": "test_01_registry_and_profile_contracts + fresh-process acceptance",
     "/api/capabilities/matrix": "test_01_registry_and_profile_contracts",
     "/api/capabilities/export.md": "test_01_registry_and_profile_contracts",
+    "/api/options": "test_option_api_is_read_only_and_honest",
+    "/api/options/export.md": "test_option_api_is_read_only_and_honest",
     "/api/feedback": "test_01_registry_and_profile_contracts",
     "/api/feedback/{feedback_id}/publish-preview": "test_01_registry_and_profile_contracts",
     "/api/plugins": "test_01_registry_and_profile_contracts",
@@ -117,27 +120,46 @@ def _approval_rows(resources: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def _option_rows() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    accepted_tiers = {"synthetic", "live_local", "device", "provider", "external"}
+    for item in option_inventory()["definitions"]:
+        evidence = [entry["receipt"] for entry in item["evidence"]]
+        tiers = {entry["tier"] for entry in item["evidence"]}
+        if item["status"] == "disabled":
+            status = "DISABLED"
+        elif item["status"] == "ready" and tiers & accepted_tiers:
+            status = "PASS"
+        else:
+            status = "BLOCKED"
+        reason = None if status == "PASS" else "; ".join(item["prerequisites"]) or f"option_status_{item['status']}"
+        rows.append({"id": item["option_id"], "category": item["category"], "status": status, "effect": item["effect"], "default": item["default"], "evidence": evidence, "reason": reason})
+    return rows
+
+
 def build_capability_matrix(routes: Iterable[Any]) -> dict[str, Any]:
     nodes = _node_rows()
     resources = _resource_rows()
     route_rows = _route_rows(routes)
     approvals = _approval_rows(resources)
+    options = _option_rows()
     honesty = capability_audit()
     return {
         "generated_at": datetime.now(UTC).isoformat(),
         "taxonomy": {"PASS": "exercised with recorded evidence", "BLOCKED": "registered or implemented but required acceptance evidence is absent", "DISABLED": "unavailable with an explicit reason", "FAIL": "exercised and failed"},
         "registry_honesty": {"total": honesty.get("total"), "invalid_ready": honesty.get("invalid_ready", [])},
-        "summary": {"nodes": _status_counts(nodes), "resources": _status_counts(resources), "routes": _status_counts(route_rows), "approvals": _status_counts(approvals)},
+        "summary": {"nodes": _status_counts(nodes), "resources": _status_counts(resources), "routes": _status_counts(route_rows), "approvals": _status_counts(approvals), "options": _status_counts(options)},
         "nodes": nodes,
         "resources": resources,
         "routes": route_rows,
         "approvals": approvals,
+        "options": options,
     }
 
 
 def capability_matrix_markdown(matrix: dict[str, Any]) -> str:
     lines = ["# AI Workspace capability acceptance matrix", "", f"Generated: `{matrix['generated_at']}`", "", "> PASS requires executed evidence. Registration alone is BLOCKED, never PASS.", ""]
-    for section in ("nodes", "resources", "routes", "approvals"):
+    for section in ("nodes", "resources", "routes", "approvals", "options"):
         rows = matrix[section]
         lines.extend([f"## {section.title()}", "", "| Capability | Status | Evidence / exact reason |", "|---|---|---|"])
         for row in rows:

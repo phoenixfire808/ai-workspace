@@ -10,7 +10,6 @@ from queue import Queue
 from threading import Thread
 from typing import Any
 
-import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
@@ -20,7 +19,6 @@ from sqlalchemy.orm import Session
 
 from .database import FeedbackItem, Project, SessionLocal, get_db, list_projects, utc_now
 from .agent_engine import (
-    DEFAULT_LFM_BASE_URL,
     DEFAULT_LFM_MODEL,
     AgentEngineError,
     initial_agent_state,
@@ -28,9 +26,6 @@ from .agent_engine import (
 )
 from .graph import (
     DEFAULT_MINIMAX_MODEL,
-    DEFAULT_NANBEIGE_BASE_URL,
-    DEFAULT_NANBEIGE_MODEL,
-    DEFAULT_OLLAMA_MODEL,
     GraphValidationError,
     configured_agents,
     run_graph,
@@ -52,7 +47,8 @@ from .runtime_control import list_runtime_profiles, preflight_runtime_profile
 from .plugins import plugin_catalog
 from .terminal_control import TerminalPreviewRequest, preview_terminal_command
 from .upgrade_control import upgrade_inventory, upgrade_preflight
-from .ollama_control import OllamaPreflightPayload, list_ollama_models, preflight_ollama_model
+from .ollama_control import DEFAULT_OLLAMA_BASE_URL, DEFAULT_OLLAMA_MODEL, OllamaPreflightPayload, list_ollama_models, preflight_ollama_model
+from .model_settings import WorkspaceModelPayload, get_workspace_model_setting, save_workspace_model_setting
 from .model_profiles import (
     EndpointProfilePayload,
     HardwareProfilePayload,
@@ -84,6 +80,7 @@ from .tools import WORKSPACE_TOOL_CATALOG, WORKSPACE_TOOL_NAMES
 from .hermes_adapter import hermes_capability_audit
 from .capability_matrix import build_capability_matrix, capability_matrix_markdown
 from .feedback import FeedbackPublishError, github_publish_preview, publish_feedback_to_github
+from .options_registry import option_inventory, option_inventory_markdown
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -161,58 +158,21 @@ def _execution_error(exc: Exception) -> dict[str, str]:
     }
 
 
-def _nanbeige_ready(provider: str) -> bool:
-    if provider != "nanbeige":
-        return False
-    base_url = os.getenv("NANBEIGE_BASE_URL", DEFAULT_NANBEIGE_BASE_URL).strip().rstrip("/")
-    if base_url != DEFAULT_NANBEIGE_BASE_URL:
-        return False
-    try:
-        with httpx.Client(timeout=0.75, trust_env=False) as client:
-            response = client.get(f"{base_url}/models")
-            response.raise_for_status()
-            payload = response.json()
-        return isinstance(payload, dict) and any(
-            isinstance(item, dict) and item.get("id") == DEFAULT_NANBEIGE_MODEL
-            for item in payload.get("data", [])
-        )
-    except (httpx.HTTPError, TypeError, ValueError):
-        return False
-
-
-def _lfm_ready() -> bool:
-    base_url = os.getenv("LFM_BASE_URL", DEFAULT_LFM_BASE_URL).strip().rstrip("/")
-    model = os.getenv("LFM_MODEL", DEFAULT_LFM_MODEL).strip()
-    if base_url != DEFAULT_LFM_BASE_URL or model != DEFAULT_LFM_MODEL:
-        return False
-    try:
-        with httpx.Client(timeout=0.75, trust_env=False) as client:
-            response = client.get(f"{base_url}/models")
-            response.raise_for_status()
-            payload = response.json()
-        return isinstance(payload, dict) and any(
-            isinstance(item, dict) and item.get("id") == DEFAULT_LFM_MODEL
-            for item in payload.get("data", [])
-        )
-    except (httpx.HTTPError, TypeError, ValueError):
-        return False
-
-
 @app.get("/api/health")
 def health() -> dict[str, Any]:
-    model_provider = os.getenv("WORKSPACE_MODEL_PROVIDER", "ollama").strip().lower()
+    setting = get_workspace_model_setting()
+    preflight = preflight_ollama_model(str(setting["model"]))
     return {
         "status": "ok",
         "workspace_root": str(WORKSPACE_ROOT),
-        "model_provider": model_provider,
-        "nanbeige_base_url": os.getenv("NANBEIGE_BASE_URL", DEFAULT_NANBEIGE_BASE_URL),
-        "nanbeige_model": os.getenv("NANBEIGE_MODEL", DEFAULT_NANBEIGE_MODEL),
-        "nanbeige_ready": _nanbeige_ready(model_provider),
-        "lfm_base_url": os.getenv("LFM_BASE_URL", DEFAULT_LFM_BASE_URL),
-        "lfm_model": os.getenv("LFM_MODEL", DEFAULT_LFM_MODEL),
-        "lfm_ready": _lfm_ready(),
-        "ollama_base_url": os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
-        "ollama_model": os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL),
+        "model_provider": setting["provider"],
+        "model": setting["model"],
+        "model_ready": preflight.get("status") == "ready" and preflight.get("exact_model") is True,
+        "model_persisted": setting["persisted"],
+        "hardware_profile_id": setting["hardware_profile_id"],
+        "fallback_policy": "explicit_only",
+        "ollama_base_url": os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL),
+        "ollama_model": setting["model"],
         "minimax_model": os.getenv("MINIMAX_MODEL", DEFAULT_MINIMAX_MODEL),
         "buzz_on_path": shutil.which(os.getenv("BUZZ_EXECUTABLE", "buzz")) is not None,
         "configured_agents": configured_agents(),
@@ -254,6 +214,17 @@ def get_capability_matrix() -> dict[str, Any]:
 @app.get("/api/capabilities/export.md", response_class=PlainTextResponse)
 def export_capability_matrix() -> PlainTextResponse:
     return PlainTextResponse(capability_matrix_markdown(build_capability_matrix(app.routes)), media_type="text/markdown")
+
+
+@app.get("/api/options")
+def get_option_inventory() -> dict[str, Any]:
+    """Return the Phase 0 read-only option contract; no setting is applied here."""
+    return option_inventory()
+
+
+@app.get("/api/options/export.md", response_class=PlainTextResponse)
+def export_option_inventory() -> PlainTextResponse:
+    return PlainTextResponse(option_inventory_markdown(option_inventory()), media_type="text/markdown")
 
 
 @app.get("/api/plugins")
@@ -319,6 +290,21 @@ def ollama_models() -> dict[str, Any]:
 def ollama_preflight(payload: OllamaPreflightPayload) -> dict[str, Any]:
     """Require an exact installed Ollama model before a workflow can invoke it."""
     return preflight_ollama_model(payload.model)
+
+
+@app.get("/api/settings/model")
+def workspace_model_setting() -> dict[str, Any]:
+    """Return the persistent global M⊕ model selection without mutating it."""
+    return get_workspace_model_setting()
+
+
+@app.put("/api/settings/model")
+def workspace_model_setting_save(payload: WorkspaceModelPayload) -> dict[str, Any]:
+    """Persist one exact installed Ollama model as the global M⊕ default."""
+    try:
+        return save_workspace_model_setting(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/runtime/profiles")

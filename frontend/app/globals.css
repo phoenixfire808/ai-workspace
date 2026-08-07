@@ -300,6 +300,20 @@ button { color: inherit; }
 .timer-controls { padding: 8px; border: 1px solid var(--line); border-radius: 7px; background: rgba(4, 11, 21, .3); }
 .timer-controls small { color: var(--muted); }
 .feedback-panel .upgrade-row button { min-width: 82px; }
+.option-catalog { display: grid; gap: 8px; }
+.option-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+.option-summary span { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: rgba(4, 11, 21, .3); color: var(--muted); font-size: 11px; }
+.option-summary strong { color: var(--text); }
+.option-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.option-list { display: grid; gap: 5px; max-height: 440px; overflow: auto; padding-right: 2px; }
+.option-row { border: 1px solid var(--line); border-radius: 7px; background: rgba(4, 11, 21, .28); padding: 7px; }
+.option-row summary { cursor: pointer; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.option-row summary > span:first-child { display: grid; gap: 2px; min-width: 0; }
+.option-row code { color: var(--cyan); font-size: 10px; overflow-wrap: anywhere; }
+.option-row p { margin: 8px 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.option-row dl { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 4px 8px; margin: 0; font-size: 10px; }
+.option-row dt { color: var(--muted); }
+.option-row dd { margin: 0; overflow-wrap: anywhere; }
 
 @media (max-width: 1180px) {
   .topbar { gap: 10px; padding-inline: 14px; }

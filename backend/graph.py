@@ -10,16 +10,16 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterator, TypedDict
-from urllib.parse import urlsplit
+
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from .agent_engine import DEFAULT_LFM_BASE_URL, DEFAULT_LFM_MODEL
 from .database import SessionLocal, upsert_task
 from .delegation import DelegationError, plan_or_dispatch
 from .hermes_adapter import dispatch_hermes_skill
 from .ollama_control import DEFAULT_OLLAMA_MODEL, preflight_ollama_model
+from .model_settings import resolve_workspace_model
 from .runtime_control import preflight_runtime_profile
 from .model_profiles import generate_with_endpoint
 from .schema import GraphDocument, GraphNode
@@ -33,8 +33,7 @@ MAX_FILE_CHARS = 200_000
 _AGENT_PROCESSES: dict[int, subprocess.Popen[str]] = {}
 _AGENT_PROCESSES_LOCK = threading.Lock()
 DEFAULT_MINIMAX_MODEL = "MiniMax-M3"
-DEFAULT_NANBEIGE_MODEL = "nanbeige4.2-3b-local"
-DEFAULT_NANBEIGE_BASE_URL = "http://127.0.0.1:8080/v1"
+
 DEFAULT_PLANNER_PROMPT = (
     "You are the local workflow planner. Convert the supplied user intent into a concise, "
     "structured implementation plan with goal, assumptions, ordered steps, files or tools "
@@ -175,69 +174,6 @@ def _model_timeout_seconds() -> float:
     return min(max(configured, 1.0), 600.0)
 
 
-def _nanbeige_base_url() -> str:
-    raw = os.getenv("NANBEIGE_BASE_URL", DEFAULT_NANBEIGE_BASE_URL).strip()
-    try:
-        parsed = urlsplit(raw)
-        port = parsed.port
-    except ValueError as exc:
-        raise NodeExecutionError("Nanbeige endpoint configuration is invalid", "nanbeige_endpoint_invalid") from exc
-    if (
-        parsed.scheme != "http"
-        or parsed.hostname != "127.0.0.1"
-        or port is None
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.path.rstrip("/") != "/v1"
-        or parsed.query
-        or parsed.fragment
-    ):
-        raise NodeExecutionError(
-            "Nanbeige endpoint must be an unauthenticated 127.0.0.1 HTTP /v1 URL",
-            "nanbeige_endpoint_invalid",
-        )
-    return f"http://127.0.0.1:{port}/v1/"
-
-
-def _bounded_nanbeige_tokens(value: Any) -> int:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        parsed = 4096
-    return min(max(parsed, 64), 8192)
-
-
-def _lfm_base_url() -> str:
-    raw = os.getenv("LFM_BASE_URL", DEFAULT_LFM_BASE_URL).strip()
-    try:
-        parsed = urlsplit(raw)
-        port = parsed.port
-    except ValueError as exc:
-        raise NodeExecutionError("LFM endpoint configuration is invalid", "lfm_endpoint_invalid") from exc
-    if (
-        parsed.scheme != "http"
-        or parsed.hostname != "127.0.0.1"
-        or port is None
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.path.rstrip("/") != "/v1"
-        or parsed.query
-        or parsed.fragment
-    ):
-        raise NodeExecutionError(
-            "LFM endpoint must be an unauthenticated 127.0.0.1 HTTP /v1 URL",
-            "lfm_endpoint_invalid",
-        )
-    return f"http://127.0.0.1:{port}/v1/"
-
-
-def _bounded_lfm_tokens(value: Any) -> int:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        parsed = 4096
-    return min(max(parsed, 64), 8192)
-
 
 def _enforce_model_policy(model: str) -> str:
     if re.search(r"qwen[\s/_-]*2\.5", model, flags=re.IGNORECASE):
@@ -289,86 +225,6 @@ def transcribe_audio(file_path: str, model_size: str, root: Path) -> str:
         raise NodeExecutionError("the transcript output could not be read", "buzz_output_unreadable") from exc
 
 
-def _nanbeige_output(prompt: str, data: dict[str, Any]) -> str:
-    try:
-        import httpx
-    except ImportError as exc:
-        raise NodeExecutionError("Nanbeige integration dependencies are not installed", "nanbeige_dependency_missing") from exc
-
-    configured_model = os.getenv("NANBEIGE_MODEL", DEFAULT_NANBEIGE_MODEL).strip()
-    requested_model = str(data.get("model") or configured_model).strip()
-    if configured_model != DEFAULT_NANBEIGE_MODEL or requested_model != DEFAULT_NANBEIGE_MODEL:
-        raise NodeExecutionError(
-            "Nanbeige model must match the approved local workspace alias",
-            "nanbeige_model_policy_rejected",
-        )
-    base_url = _nanbeige_base_url()
-    try:
-        temperature = min(max(float(data.get("temperature", 0.6)), 0.0), 2.0)
-    except (TypeError, ValueError):
-        temperature = 0.6
-    payload = {
-        "model": DEFAULT_NANBEIGE_MODEL,
-        "messages": [
-            {
-                "role": "system",
-                "content": str(
-                    data.get("system_prompt")
-                    or "You are a precise local coding assistant. Return the most useful direct result for the workflow."
-                ),
-            },
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": temperature,
-        "top_p": 0.95,
-        "top_k": 20,
-        "max_tokens": _bounded_nanbeige_tokens(data.get("max_tokens", 4096)),
-        "stream": False,
-        "chat_template_kwargs": {
-            "enable_thinking": data.get("enable_thinking", True) is not False,
-            "preserve_thinking": False,
-        },
-    }
-    try:
-        with httpx.Client(base_url=base_url, timeout=_model_timeout_seconds(), trust_env=False) as client:
-            models_response = client.get("models")
-            models_response.raise_for_status()
-            models_payload = models_response.json()
-            if not isinstance(models_payload, dict):
-                raise NodeExecutionError(
-                    "The local Nanbeige model inventory was invalid",
-                    "nanbeige_invalid_response",
-                )
-            model_ids = {
-                item.get("id")
-                for item in models_payload.get("data", [])
-                if isinstance(item, dict) and isinstance(item.get("id"), str)
-            }
-            if DEFAULT_NANBEIGE_MODEL not in model_ids:
-                raise NodeExecutionError(
-                    "The approved Nanbeige workspace model is not exposed by the local endpoint",
-                    "nanbeige_model_mismatch",
-                )
-            response = client.post("chat/completions", json=payload)
-            response.raise_for_status()
-            response_payload = response.json()
-            content = response_payload["choices"][0]["message"]["content"]
-    except NodeExecutionError:
-        raise
-    except httpx.TimeoutException as exc:
-        raise NodeExecutionError("Nanbeige generation timed out", "nanbeige_timeout") from exc
-    except httpx.ConnectError as exc:
-        raise NodeExecutionError("The local Nanbeige workspace server is unavailable", "nanbeige_unavailable") from exc
-    except httpx.HTTPStatusError as exc:
-        raise NodeExecutionError("The local Nanbeige workspace server rejected the request", "nanbeige_failed") from exc
-    except httpx.RequestError as exc:
-        raise NodeExecutionError("The local Nanbeige workspace request failed", "nanbeige_unavailable") from exc
-    except (KeyError, IndexError, TypeError, ValueError) as exc:
-        raise NodeExecutionError("The local Nanbeige workspace response was invalid", "nanbeige_invalid_response") from exc
-    if not isinstance(content, str) or not content.strip():
-        raise NodeExecutionError("The local Nanbeige workspace response was empty", "nanbeige_empty_response")
-    return content[:MAX_FILE_CHARS]
-
 
 def _minimax_output(prompt: str, data: dict[str, Any]) -> str:
     try:
@@ -405,77 +261,6 @@ def _minimax_output(prompt: str, data: dict[str, Any]) -> str:
     return content[:MAX_FILE_CHARS]
 
 
-def _lfm_output(prompt: str, data: dict[str, Any]) -> str:
-    try:
-        import httpx
-    except ImportError as exc:
-        raise NodeExecutionError("LFM integration dependencies are not installed", "lfm_dependency_missing") from exc
-
-    configured_model = os.getenv("LFM_MODEL", DEFAULT_LFM_MODEL).strip()
-    requested_model = str(data.get("model") or configured_model).strip()
-    if configured_model != DEFAULT_LFM_MODEL or requested_model != DEFAULT_LFM_MODEL:
-        raise NodeExecutionError(
-            "LFM model must match the approved LiquidAI model identity",
-            "lfm_model_policy_rejected",
-        )
-    base_url = _lfm_base_url()
-    try:
-        temperature = min(max(float(data.get("temperature", 0.1)), 0.0), 2.0)
-    except (TypeError, ValueError):
-        temperature = 0.1
-    payload = {
-        "model": DEFAULT_LFM_MODEL,
-        "messages": [
-            {
-                "role": "system",
-                "content": str(
-                    data.get("system_prompt")
-                    or "You are a precise local agentic assistant. Return the most useful direct result."
-                ),
-            },
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": temperature,
-        "top_k": 50,
-        "repetition_penalty": 1.1,
-        "max_tokens": _bounded_lfm_tokens(data.get("max_tokens", 4096)),
-        "stream": False,
-    }
-    try:
-        with httpx.Client(base_url=base_url, timeout=_model_timeout_seconds(), trust_env=False) as client:
-            models_response = client.get("models")
-            models_response.raise_for_status()
-            models_payload = models_response.json()
-            model_ids = {
-                item.get("id")
-                for item in models_payload.get("data", [])
-                if isinstance(item, dict) and isinstance(item.get("id"), str)
-            }
-            if DEFAULT_LFM_MODEL not in model_ids:
-                raise NodeExecutionError(
-                    "The approved LFM model is not exposed by the configured local endpoint",
-                    "lfm_model_mismatch",
-                )
-            response = client.post("chat/completions", json=payload)
-            response.raise_for_status()
-            content = response.json()["choices"][0]["message"]["content"]
-    except NodeExecutionError:
-        raise
-    except httpx.TimeoutException as exc:
-        raise NodeExecutionError("LFM generation timed out", "lfm_timeout") from exc
-    except httpx.ConnectError as exc:
-        raise NodeExecutionError("The local LFM server is unavailable", "lfm_unavailable") from exc
-    except httpx.HTTPStatusError as exc:
-        raise NodeExecutionError("The local LFM server rejected the request", "lfm_failed") from exc
-    except httpx.RequestError as exc:
-        raise NodeExecutionError("The local LFM request failed", "lfm_unavailable") from exc
-    except (KeyError, IndexError, TypeError, ValueError) as exc:
-        raise NodeExecutionError("The local LFM response was invalid", "lfm_invalid_response") from exc
-    if not isinstance(content, str) or not content.strip():
-        raise NodeExecutionError("The local LFM response was empty", "lfm_empty_response")
-    return content[:MAX_FILE_CHARS]
-
-
 def _ollama_output(prompt: str, data: dict[str, Any]) -> str:
     try:
         from langchain_core.messages import HumanMessage, SystemMessage
@@ -483,7 +268,15 @@ def _ollama_output(prompt: str, data: dict[str, Any]) -> str:
     except ImportError as exc:
         raise NodeExecutionError("Ollama integration dependencies are not installed", "ollama_dependency_missing") from exc
 
-    requested_model = str(data.get("model") or os.getenv("OLLAMA_MODEL", "")).strip()
+    try:
+        selection = resolve_workspace_model(
+            node_provider=str(data.get("provider") or "") or None,
+            node_model=str(data.get("model") or "") or None,
+        )
+    except ValueError as exc:
+        failure = str(exc)
+        raise NodeExecutionError("workspace model selection is not executable", failure) from exc
+    requested_model = selection["model"]
     preflight = preflight_ollama_model(requested_model)
     model = _enforce_model_policy(str(preflight.get("model") or DEFAULT_OLLAMA_MODEL))
     if preflight.get("status") != "ready" or not preflight.get("exact_model"):
@@ -522,9 +315,12 @@ def _model_output(prompt: str, data: dict[str, Any]) -> str:
             raise NodeExecutionError("the selected endpoint could not generate a response", "endpoint_generation_failed") from exc
     provider = str(data.get("provider") or os.getenv("WORKSPACE_MODEL_PROVIDER", "ollama")).strip().lower()
     if provider == "nanbeige":
-        return _nanbeige_output(prompt, data)
+        raise NodeExecutionError("Nanbeige has been retired from M⊕", "nanbeige_retired_from_workspace")
     if provider == "lfm":
-        return _lfm_output(prompt, data)
+        legacy_data = {**data, "provider": "ollama"}
+        if str(legacy_data.get("model") or "") == "LFM2.5-2.6B":
+            legacy_data["model"] = ""
+        return _ollama_output(prompt, legacy_data)
     if provider in {"minimax", "minimax-oauth"}:
         return _minimax_output(prompt, data)
     if provider == "ollama":
@@ -542,8 +338,8 @@ def _model_output(prompt: str, data: dict[str, Any]) -> str:
 def _planner_output(prompt: str, data: dict[str, Any]) -> str:
     planner_data = {
         **data,
-        "provider": "nanbeige",
-        "model": DEFAULT_NANBEIGE_MODEL,
+        "provider": str(data.get("provider") or "ollama"),
+        "model": str(data.get("model") or ""),
         "system_prompt": str(data.get("system_prompt") or DEFAULT_PLANNER_PROMPT),
         "enable_thinking": False,
         "max_tokens": min(int(data.get("max_tokens", 4096)), 4096),
@@ -757,6 +553,13 @@ def compile_graph_from_json(
 
     builder = StateGraph(AgentState)
     for node in document.nodes:
+        if node.type in {"planner", "coder"}:
+            merged_data = dict(node.data)
+            if not merged_data.get("provider") and document.settings.get("model_provider"):
+                merged_data["provider"] = document.settings["model_provider"]
+            if not merged_data.get("model") and document.settings.get("model"):
+                merged_data["model"] = document.settings["model"]
+            node = node.model_copy(update={"data": merged_data})
         def make_executor(current_node: GraphNode) -> Callable[[AgentState], dict[str, Any]]:
             def executor(state: AgentState) -> dict[str, Any]:
                 started = time.perf_counter()

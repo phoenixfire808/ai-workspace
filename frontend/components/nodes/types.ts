@@ -1,7 +1,7 @@
 import type { Node } from "@xyflow/react";
 
 export type NodeKind = "start" | "buzz" | "tts" | "planner" | "coder" | "file" | "task" | "agent" | "tool" | "runtime" | "review" | "chat" | "split" | "merge" | "context" | "plugin" | "delegate" | "search" | "research" | "source_context";
-export type ModelProvider = "nanbeige" | "lfm" | "minimax" | "ollama" | "openrouter";
+export type ModelProvider = "minimax" | "ollama" | "openrouter";
 
 export interface WorkspaceNodeData extends Record<string, unknown> {
   label: string;
@@ -14,8 +14,6 @@ export interface WorkspaceNodeData extends Record<string, unknown> {
 export type WorkspaceNode = Node<WorkspaceNodeData, NodeKind>;
 
 export const MODEL_OPTIONS: Record<ModelProvider, { label: string; model: string }> = {
-  nanbeige: { label: "Nanbeige4.2-3B · RTX 2070 SUPER", model: "nanbeige4.2-3b-local" },
-  lfm: { label: "LFM2.5-2.6B · explicit agent option", model: "LFM2.5-2.6B" },
   minimax: { label: "MiniMax-M3", model: "MiniMax-M3" },
   ollama: {
     label: "Ollama · installed local models",
@@ -67,8 +65,8 @@ export function nodeDefaults(kind: NodeKind): WorkspaceNodeData {
       return {
         label: "Planner",
         description: "Turn conversational intent into a structured implementation plan.",
-        provider: "nanbeige",
-        model: "nanbeige4.2-3b-local",
+        provider: "ollama",
+        model: "",
         system_prompt: "You are the local workflow planner. Return goal, assumptions, ordered steps, risks, and verification.",
         max_tokens: 4096,
       };

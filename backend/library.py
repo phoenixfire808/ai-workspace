@@ -161,7 +161,7 @@ def _templates() -> list[dict[str, Any]]:
                 ("start", {}),
                 ("tool", {"resource_id": "tool:deep_research", "arguments": {"query": "", "max_pages": 8, "max_results_per_query": 6, "extract_pages": True}}),
                 ("tool", {"resource_id": "tool:build_research_context", "arguments": {"context_text": "", "max_chars": 30000}}),
-                ("coder", {"provider": "nanbeige", "model": "nanbeige4.2-3b-local"}),
+                ("coder", {"provider": "ollama", "model": ""}),
             ],
         },
         {
@@ -195,13 +195,6 @@ def _template_graph(template: dict[str, Any], options: dict[str, Any] | None = N
 
 
 def _static_model_readiness(provider: str) -> tuple[bool, str | None]:
-    if provider == "nanbeige":
-        result = preflight_runtime_profile("nanbeige-rtx2070-super")
-        if result.get("status") == "ready":
-            return True, None
-        return False, f"nanbeige_{result.get('status', 'not-ready')}"
-    if provider == "lfm":
-        return False, "lfm_runtime_not_provisioned"
     if provider == "minimax":
         if not os.getenv("MINIMAX_BASE_URL", "").strip() or not os.getenv("MINIMAX_API_KEY", "").strip():
             return False, "minimax_not_configured"
@@ -281,8 +274,6 @@ def library_resources() -> list[LibraryResource]:
             )
         )
     static_models = [
-        ("nanbeige", "nanbeige4.2-3b-local", "Verified local Nanbeige route"),
-        ("lfm", "LFM2.5-2.6B", "Explicit local LFM route"),
         ("minimax", "MiniMax-M3", "Explicit configured MiniMax route"),
     ]
     for provider, model, description in static_models:

@@ -13,13 +13,17 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 BACKEND_DIR = Path(__file__).resolve().parent
 load_dotenv(BACKEND_DIR / ".env", override=False)
 DEFAULT_DB_PATH = BACKEND_DIR / "workspace.db"
-DB_PATH = Path(os.getenv("WORKSPACE_DB_PATH", str(DEFAULT_DB_PATH))).expanduser()
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-DATABASE_URL = f"sqlite:///{DB_PATH.as_posix()}"
+_explicit_database_url = (os.getenv("WORKSPACE_DATABASE_URL") or os.getenv("DATABASE_URL") or "").strip()
+if _explicit_database_url:
+    DATABASE_URL = _explicit_database_url
+    DB_PATH: Path | None = None
+else:
+    DB_PATH = Path(os.getenv("WORKSPACE_DB_PATH", str(DEFAULT_DB_PATH))).expanduser()
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    DATABASE_URL = f"sqlite:///{DB_PATH.as_posix()}"
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite:") else {},
 )
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
@@ -151,6 +155,16 @@ class HardwareProfile(Base):
     mode: Mapped[str] = mapped_column(String(32), default="auto")
     device_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
     settings: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class WorkspaceModelSetting(Base):
+    __tablename__ = "workspace_model_settings"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default="global")
+    provider: Mapped[str] = mapped_column(String(32), default="ollama")
+    model: Mapped[str] = mapped_column(String(500))
+    hardware_profile_id: Mapped[str] = mapped_column(String(64), default="auto")
+    fallback_policy: Mapped[str] = mapped_column(String(32), default="explicit_only")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
 

@@ -22,6 +22,7 @@ import ApprovalReview from "./ApprovalReview";
 import ChatPanel from "./ChatPanel";
 import ControlCenterPanel from "./ControlCenterPanel";
 import FeedbackPanel from "./FeedbackPanel";
+import OptionCatalogPanel from "./OptionCatalogPanel";
 import LibraryPanel from "./LibraryPanel";
 import BuzzNode from "./nodes/BuzzNode";
 import TtsNode from "./nodes/TtsNode";
@@ -49,10 +50,11 @@ type RunStatus = "idle" | "saving" | "validating" | "running" | "complete" | "er
 type Health = {
   status: string;
   model_provider: string;
-  nanbeige_model: string;
-  nanbeige_ready: boolean;
-  lfm_model: string;
-  lfm_ready: boolean;
+  model: string;
+  model_ready: boolean;
+  model_persisted: boolean;
+  hardware_profile_id: string;
+  fallback_policy: string;
   minimax_model: string;
   ollama_model: string;
   buzz_on_path: boolean;
@@ -562,20 +564,8 @@ export default function Canvas() {
     return "IDLE";
   }, [runStatus]);
 
-  const activeModel = health?.model_provider === "nanbeige"
-    ? health.nanbeige_model
-    : health?.model_provider === "lfm"
-      ? health.lfm_model
-    : health?.model_provider === "ollama"
-      ? health.ollama_model
-      : health?.minimax_model;
-  const activeRouteReady = Boolean(health && (
-    health.model_provider === "nanbeige"
-      ? health.nanbeige_ready
-      : health.model_provider === "lfm"
-        ? health.lfm_ready
-        : true
-  ));
+  const activeModel = health?.model ?? health?.ollama_model;
+  const activeRouteReady = Boolean(health?.model_ready);
   const effectiveLeftCollapsed = leftPanelCollapsed && !stackedLayout;
   const effectiveRightCollapsed = rightPanelCollapsed && !stackedLayout;
   const workspaceStyle = {
@@ -637,14 +627,12 @@ export default function Canvas() {
           </div>
           <div className="panel-divider" />
           <div className="mini-section-title">MODEL ROUTE</div>
-          <div className="route-card"><span className="route-indicator nanbeige" /><div><strong>Nanbeige4.2-3B</strong><small>Shared RTX 2070 SUPER · :8080</small></div><span className="route-state">PRIMARY</span></div>
-          <div className="route-card route-muted"><span className="route-indicator minimax" /><div><strong>LFM2.5-2.6B</strong><small>Explicit agent option · separate runtime</small></div><span className="route-state">OPT-IN</span></div>
+          <div className="route-card"><span className="route-indicator ollama" /><div><strong>LFM2.5-2.6B Q4_K_M</strong><small>Saved global Ollama model</small></div><span className="route-state">PRIMARY</span></div>
           <div className="route-card route-muted"><span className="route-indicator minimax" /><div><strong>MiniMax-M3</strong><small>Explicit endpoint</small></div><span className="route-state">OPT-IN</span></div>
-          <div className="route-card route-muted"><span className="route-indicator ollama" /><div><strong>Ollama</strong><small>Environment configured</small></div><span className="route-state">OPT-IN</span></div>
+          <div className="route-card route-muted"><span className="route-indicator minimax" /><div><strong>OpenRouter</strong><small>Explicit cloud endpoint</small></div><span className="route-state">OPT-IN</span></div>
           <div className="panel-divider" />
           <div className="mini-section-title">HARDWARE LANES</div>
-          <div className="hardware-row"><span className="hardware-chip gpu-purple">GPU 1</span><span>RTX 2070 Super</span><small>Nanbeige + STT</small></div>
-          <div className="hardware-row"><span className="hardware-chip gpu-blue">GPU 0</span><span>RTX 5060 Ti</span><small>Available</small></div>
+          <div className="hardware-row"><span className="hardware-chip gpu-blue">AUTO</span><span>Ollama placement</span><small>Inspect live GPU evidence</small></div>
         </aside>}
 
         <div className={`panel-splitter panel-splitter-left${effectiveLeftCollapsed ? " is-hidden" : ""}`} role="separator" aria-label="Resize left panel" aria-orientation="vertical" tabIndex={effectiveLeftCollapsed ? -1 : 0} onPointerDown={(event) => beginPanelResize("left", event)} onKeyDown={(event) => resizePanelByKeyboard("left", event.key)}><span /></div>
@@ -701,8 +689,7 @@ export default function Canvas() {
           <div className="mini-section-title">RUNTIME READINESS</div>
           <div className="readiness-list">
             <div><span className={health ? "ready-mark" : "warning-mark"}>{health ? "✓" : "!"}</span><span>FastAPI backend</span><small>{health ? "connected" : "offline"}</small></div>
-            <div><span className={health?.nanbeige_ready ? "ready-mark" : "warning-mark"}>{health?.nanbeige_ready ? "✓" : "!"}</span><span>Nanbeige4.2 route</span><small>{health?.nanbeige_ready ? health.nanbeige_model : "listener offline"}</small></div>
-            <div><span className={health?.lfm_ready ? "ready-mark" : "warning-mark"}>{health?.lfm_ready ? "✓" : "!"}</span><span>LFM2.5 route</span><small>{health?.lfm_ready ? health.lfm_model : "explicit option offline"}</small></div>
+            <div><span className={health?.model_ready ? "ready-mark" : "warning-mark"}>{health?.model_ready ? "✓" : "!"}</span><span>Global workspace model</span><small>{health?.model_ready ? health.model : "selected model unavailable"}</small></div>
             <div><span className={health?.buzz_on_path ? "ready-mark" : "warning-mark"}>{health?.buzz_on_path ? "✓" : "!"}</span><span>Buzz CLI</span><small>{health?.buzz_on_path ? "available" : "not on PATH"}</small></div>
             <div><span className={health?.configured_agents?.length ? "ready-mark" : "warning-mark"}>{health?.configured_agents?.length ? "✓" : "!"}</span><span>Agent reactions</span><small>{health?.configured_agents?.length ? health.configured_agents.join(", ") : "none configured"}</small></div>
           </div>
@@ -710,6 +697,8 @@ export default function Canvas() {
           <ChatPanel />
           <div className="panel-divider" />
           <ControlCenterPanel />
+          <div className="panel-divider" />
+          <OptionCatalogPanel />
           <div className="panel-divider" />
           <FeedbackPanel activeRunId={activeRunId} />
         </aside>}

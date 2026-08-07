@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -8,11 +7,6 @@ import httpx
 from pydantic import BaseModel, Field
 
 from .ollama_control import DEFAULT_OLLAMA_BASE_URL, DEFAULT_OLLAMA_MODEL
-
-DEFAULT_NANBEIGE_MODEL = "nanbeige4.2-3b-local"
-DEFAULT_NANBEIGE_ENDPOINT = "http://127.0.0.1:8080/v1"
-DEFAULT_LFM_MODEL = "LFM2.5-2.6B"
-DEFAULT_LFM_ENDPOINT = "http://127.0.0.1:8082/v1"
 
 
 class GpuLane(BaseModel):
@@ -44,7 +38,7 @@ class RuntimeProfile(BaseModel):
 PROFILES: tuple[RuntimeProfile, ...] = (
     RuntimeProfile(
         profile_id="ollama-local-models",
-        label="Ollama · installed local models",
+        label="M⊕ workspace model · Ollama",
         provider="ollama",
         model=DEFAULT_OLLAMA_MODEL,
         mode="local-server",
@@ -61,91 +55,7 @@ PROFILES: tuple[RuntimeProfile, ...] = (
                 slots=1,
             )
         ],
-        notes="Priority local model lane. Select an exact installed ID from the Ollama inventory; no pull, delete, or server mutation is exposed.",
-    ),
-    RuntimeProfile(
-        profile_id="nanbeige-rtx2070-super",
-        label="Nanbeige · RTX 2070 SUPER",
-        provider="nanbeige",
-        model=DEFAULT_NANBEIGE_MODEL,
-        mode="single-gpu",
-        state="active-baseline",
-        context=20_480,
-        limits={"max_tokens": 8_192, "timeout_seconds": 180},
-        activation_allowed=True,
-        lanes=[
-            GpuLane(
-                lane_id="gpu-1",
-                label="NVIDIA GeForce RTX 2070 SUPER",
-                physical_gpu_index=1,
-                compute_capability="SM75",
-                cuda_visible_devices="1",
-                endpoint=DEFAULT_NANBEIGE_ENDPOINT,
-                model=DEFAULT_NANBEIGE_MODEL,
-                slots=2,
-            )
-        ],
-        notes="Verified shared SearXNG/M⊕ listener. Preserve this route unless a replacement passes preflight and rollback gates.",
-    ),
-    RuntimeProfile(
-        profile_id="nanbeige-rtx5060-ti-workspace-target",
-        label="Nanbeige M⊕ workspace · RTX 5060 Ti",
-        provider="nanbeige",
-        model="nanbeige4.2-3b-workspace",
-        mode="single-gpu",
-        state="target-not-provisioned",
-        context=20_480,
-        limits={"max_tokens": 8_192, "timeout_seconds": 180},
-        activation_allowed=False,
-        lanes=[
-            GpuLane(
-                lane_id="gpu-0",
-                label="NVIDIA GeForce RTX 5060 Ti",
-                physical_gpu_index=0,
-                compute_capability="SM120",
-                cuda_visible_devices="0",
-                endpoint="http://127.0.0.1:8081/v1",
-                model="nanbeige4.2-3b-workspace",
-                slots=1,
-            )
-        ],
-        notes="Approved split target for M⊕ while SearXNG remains on :8080. Endpoint :8081 is currently unavailable; no migration or listener mutation has occurred.",
-    ),
-    RuntimeProfile(
-        profile_id="nanbeige-dual-gpu-review",
-        label="Nanbeige · dual-GPU review",
-        provider="nanbeige",
-        model=DEFAULT_NANBEIGE_MODEL,
-        mode="dual-gpu",
-        state="planned",
-        context=20_480,
-        limits={"max_tokens": 8_192, "timeout_seconds": 180},
-        activation_allowed=False,
-        lanes=[
-            GpuLane(lane_id="gpu-0", label="RTX 5060 Ti", physical_gpu_index=0, compute_capability="SM120", cuda_visible_devices="0"),
-            GpuLane(lane_id="gpu-1", label="RTX 2070 SUPER", physical_gpu_index=1, compute_capability="SM75", cuda_visible_devices="1"),
-        ],
-        notes="Design placeholder only. Split-model and independent-server meanings remain separate decisions; no implicit dual-GPU activation.",
-    ),
-    RuntimeProfile(
-        profile_id="lfm2-agent-experimental",
-        label="LFM2.5-2.6B · explicit agent route",
-        provider="lfm",
-        model=DEFAULT_LFM_MODEL,
-        mode="unassigned-local",
-        state="not-provisioned",
-        context=32_768,
-        limits={"max_tokens": 8_192, "timeout_seconds": 180},
-        activation_allowed=False,
-        lanes=[
-            GpuLane(
-                lane_id="unassigned",
-                label="Separate local LFM runtime required",
-                endpoint=DEFAULT_LFM_ENDPOINT,
-                model=DEFAULT_LFM_MODEL,
-            )
-        ],
-        notes="Opt-in only. The endpoint must advertise the exact model before activation; no Nanbeige fallback is permitted.",
+        notes="Persistent global model selection comes from installed Ollama inventory. Node and workflow overrides remain explicit; no Nanbeige or cloud fallback is permitted.",
     ),
 )
 
@@ -204,7 +114,6 @@ def preflight_runtime_profile(profile_id: str) -> dict[str, Any]:
         profile = _profile(profile_id)
     except KeyError:
         return {"profile_id": profile_id, "status": "profile-not-found", "checks": []}
-
     checks: list[dict[str, Any]] = [
         {"name": "activation_policy", "ok": profile.activation_allowed, "detail": profile.state},
         {"name": "gpu_lane_declaration", "ok": bool(profile.lanes), "detail": f"{len(profile.lanes)} declared lane(s)"},
@@ -215,15 +124,7 @@ def preflight_runtime_profile(profile_id: str) -> dict[str, Any]:
             endpoint_result = _model_preflight(lane.endpoint, lane.model or profile.model)
             endpoints.append({"lane_id": lane.lane_id, **endpoint_result})
             checks.append({"name": f"endpoint:{lane.lane_id}", "ok": endpoint_result["exact_model"], "detail": endpoint_result["status"]})
-
-    if profile.state in {"active-baseline", "active-local"}:
-        status = "ready" if all(check["ok"] for check in checks) else "not-ready"
-    elif profile.state == "artifact-only":
-        status = "artifact-only"
-    elif profile.state == "planned":
-        status = "planned"
-    else:
-        status = "not-provisioned"
+    status = "ready" if all(check["ok"] for check in checks) else "not-ready"
     return {
         "profile_id": profile.profile_id,
         "provider": profile.provider,
@@ -237,7 +138,7 @@ def preflight_runtime_profile(profile_id: str) -> dict[str, Any]:
 
 
 def active_baseline_profile_id() -> str:
-    return "nanbeige-rtx2070-super"
+    return "ollama-local-models"
 
 
 __all__ = ["active_baseline_profile_id", "list_runtime_profiles", "preflight_runtime_profile"]

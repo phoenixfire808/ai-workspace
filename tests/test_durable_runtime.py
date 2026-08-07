@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 _TEST_ROOT = Path(tempfile.mkdtemp(prefix="mo-durable-runtime-"))
 os.environ["WORKSPACE_ROOT"] = str(_TEST_ROOT)
-os.environ["DATABASE_URL"] = f"sqlite:///{(_TEST_ROOT / 'acceptance.db').as_posix()}"
+os.environ["WORKSPACE_DATABASE_URL"] = f"sqlite:///{(_TEST_ROOT / 'acceptance.db').as_posix()}"
 
 from fastapi.testclient import TestClient
 

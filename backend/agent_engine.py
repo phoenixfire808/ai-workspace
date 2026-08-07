@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import re
 from collections.abc import AsyncIterator
 from functools import lru_cache
 from typing import Any
@@ -14,11 +13,13 @@ from langgraph.prebuilt import ToolNode
 
 from .schema import AgentState
 from .tools import APPROVAL_REQUIRED_TOOLS, WORKSPACE_TOOL_NAMES, WORKSPACE_TOOLS
+from .model_settings import get_workspace_model_setting
+from .ollama_control import DEFAULT_OLLAMA_BASE_URL, DEFAULT_OLLAMA_MODEL, preflight_ollama_model, safe_ollama_base_url
 
 
-DEFAULT_LFM_MODEL = "LFM2.5-2.6B"
-DEFAULT_LFM_BASE_URL = "http://127.0.0.1:8082/v1"
-DEFAULT_LFM_HARDWARE_LANE = "shared-rtx-2070-super"
+DEFAULT_LFM_MODEL = DEFAULT_OLLAMA_MODEL
+DEFAULT_LFM_BASE_URL = f"{DEFAULT_OLLAMA_BASE_URL}/v1"
+DEFAULT_LFM_HARDWARE_LANE = "ollama-auto"
 MAX_AGENT_LOOPS = 8
 
 
@@ -30,34 +31,31 @@ class AgentEngineError(RuntimeError):
 
 
 def _lfm_base_url() -> str:
-    raw = os.getenv("LFM_BASE_URL", DEFAULT_LFM_BASE_URL).strip().rstrip("/")
-    match = re.fullmatch(r"http://127\.0\.0\.1:(\d+)/v1", raw)
-    if not match:
+    try:
+        return f"{safe_ollama_base_url()}/v1"
+    except ValueError as exc:
         raise AgentEngineError(
-            "LFM_BASE_URL must be an unauthenticated loopback HTTP /v1 URL",
+            "OLLAMA_BASE_URL must be an unauthenticated loopback HTTP URL",
             "lfm_endpoint_invalid",
-        )
-    return raw
+        ) from exc
 
 
 def _lfm_model() -> str:
-    model = os.getenv("LFM_MODEL", DEFAULT_LFM_MODEL).strip()
-    if model != DEFAULT_LFM_MODEL:
-        raise AgentEngineError(
-            "LFM_MODEL must match the approved LiquidAI model identity",
-            "lfm_model_policy_rejected",
-        )
+    setting = get_workspace_model_setting()
+    model = str(setting.get("model") or DEFAULT_LFM_MODEL).strip()
+    preflight = preflight_ollama_model(model)
+    if preflight.get("status") != "ready" or preflight.get("exact_model") is not True:
+        raise AgentEngineError("The selected workspace model is not installed in Ollama", str(preflight.get("failure_class") or "ollama_model_mismatch"))
     return model
 
 
-@lru_cache(maxsize=1)
-def get_lfm_llm() -> ChatOpenAI:
-    """Create the opt-in LFM client without touching the active Nanbeige route."""
+@lru_cache(maxsize=8)
+def _cached_lfm_llm(base_url: str, model: str) -> ChatOpenAI:
     try:
         return ChatOpenAI(
-            base_url=_lfm_base_url(),
+            base_url=base_url,
             api_key="not-needed",
-            model=_lfm_model(),
+            model=model,
             max_tokens=4096,
             temperature=0.1,
             streaming=True,
@@ -68,6 +66,11 @@ def get_lfm_llm() -> ChatOpenAI:
         raise
     except Exception as exc:
         raise AgentEngineError("LFM client could not be configured", "lfm_configuration_failed") from exc
+
+
+def get_lfm_llm() -> ChatOpenAI:
+    """Create an exact-model local client from the saved M⊕ Ollama selection."""
+    return _cached_lfm_llm(_lfm_base_url(), _lfm_model())
 
 
 def _preflight_lfm() -> None:
