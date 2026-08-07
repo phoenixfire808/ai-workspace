@@ -26,10 +26,9 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
-    ".next-acceptance/types/**/*.ts",
     ".next/types/**/*.ts",
     "next-env.d.ts",
-    ".next-acceptance-2/types/**/*.ts"
+    ".next-acceptance/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"
