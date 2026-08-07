@@ -1042,10 +1042,10 @@ Drew wants a canvas node that can take one larger request, decompose it into use
 - **Rollback:** `.hermes/backups/hitl-predeploy-20260807_030051.zip` preserves the source-only predeployment state; `.hermes/` remains ignored.
 - **Git/PR handoff:** 26 source/test/tracker files are staged on `feat/shared-nanbeige-agentic-workspace`; PR #1 is open but still carries the older 217-resource description. Parent publication is now the only active milestone: restore generated `next-env.d.ts`, commit, push, update the PR body with the verified 227-resource durable-runtime receipts, and verify the remote head.
 
-### 23.2 Parent live deployment receipt — 2026-08-07 03:13 CDT
+### 23.3 Parent live deployment receipt — 2026-08-07 03:13 CDT
 
 - **Accepted frontend listener:** PID `176704`, loopback `127.0.0.1:3000`, running `next start` from the freshly rebuilt production artifact. Host curl returned HTML `200` with Next static assets and the workspace marker.
-- **Accepted backend listener:** PID `176664`, loopback `127.0.0.0:8000`/`127.0.0.1:8000`, running from `backend/.venv` with `PYTHONPATH` cleared. `/api/health` returned `200` and reported the Nanbeige route ready.
+- **Accepted backend listener:** PID `176664`, loopback `127.0.0.1:8000`, running from `backend/.venv` with `PYTHONPATH` cleared. `/api/health` returned `200` and reported the Nanbeige route ready.
 - **Frontend build:** `cmd.exe /d /s /c "npm run build"` passed after the prior `.next` artifact reported a missing `vendor-chunks/d3-selection.js` module. The broken generated directory was preserved as `frontend/.next-predeploy-20260807-0303`; a clean `.next` was rebuilt and accepted.
 - **Backend/API smoke:** `py_compile` and the focused import/graph/delegation/context/private-URL smoke passed in `backend/.venv`; `/api/projects`, `/api/library`, `/api/hardware/profiles`, and `/api/health` returned `200`.
 - **Browser receipt:** `http://127.0.0.1:3000/?build=unified-library` loaded with title `M⊕ AI Visual Workspace`; refreshed snapshot shows backend health `nanbeige · nanbeige4.2-3b-local`, populated Library, `Decompose / Delegate` palette entry, and web tools with the real disabled reason `search_backend_timeout` because local SearXNG did not answer preflight.
