@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 if "backend.main" not in sys.modules:
     _TEST_ROOT = Path(tempfile.mkdtemp(prefix="mo-phase26-controls-"))
@@ -14,6 +15,7 @@ if "backend.main" not in sys.modules:
 from fastapi.testclient import TestClient
 
 from backend.main import app
+from backend.model_profiles import HardwareProfilePayload, managed_ollama_launch_spec, save_hardware_profile
 
 
 class Phase26ControlTests(unittest.TestCase):
@@ -87,6 +89,19 @@ class Phase26ControlTests(unittest.TestCase):
         self.assertLessEqual(len(payload["devices"]), 16)
         self.assertLessEqual(len(payload["processes"]), 128)
         self.assertTrue(all(set(item) == set(payload["process_fields"]) for item in payload["processes"]))
+
+    def test_05_managed_gpu_preview_uses_pci_bus_index_order(self) -> None:
+        devices = [
+            {"index": 0, "uuid": "GPU-test-a", "name": "GPU A", "memory_total_mb": 8192, "memory_free_mb": 7000, "compute_capability": "7.5"},
+            {"index": 1, "uuid": "GPU-test-b", "name": "GPU B", "memory_total_mb": 16384, "memory_free_mb": 15000, "compute_capability": "12.0"},
+        ]
+        with patch("backend.model_profiles.gpu_inventory", return_value=devices):
+            save_hardware_profile(HardwareProfilePayload(id="test-pci-order", name="Test PCI order", mode="multi_gpu", device_ids=["GPU-test-a", "GPU-test-b"], settings={"split_strategy": "runtime_auto"}))
+            preview = managed_ollama_launch_spec("test-pci-order", 11499)
+        self.assertEqual(preview["environment"]["CUDA_DEVICE_ORDER"], "PCI_BUS_ID")
+        self.assertEqual(preview["environment"]["CUDA_VISIBLE_DEVICES"], "0,1")
+        self.assertEqual(preview["environment"]["GGML_CUDA_VISIBLE_DEVICES"], "0,1")
+        self.assertEqual(preview["mutation"], "approval_required")
 
 
 if __name__ == "__main__":

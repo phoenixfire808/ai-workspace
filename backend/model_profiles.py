@@ -373,7 +373,7 @@ def managed_ollama_launch_spec(profile_id: str, port: int) -> dict[str, Any]:
         profile = _hardware_dict(item)
     if not profile["ready"]:
         raise ValueError("hardware profile is not ready")
-    environment = {"OLLAMA_HOST": f"127.0.0.1:{port}"}
+    environment = {"OLLAMA_HOST": f"127.0.0.1:{port}", "CUDA_DEVICE_ORDER": "PCI_BUS_ID"}
     if profile["mode"] == "cpu":
         environment["CUDA_VISIBLE_DEVICES"] = "-1"
         environment["GGML_CUDA_VISIBLE_DEVICES"] = "-1"
