@@ -243,4 +243,4 @@ Use the browser UI to validate, save, load, and execute a Start-only or Start â†
 - **CORS:** use `http://localhost:3000` or `http://127.0.0.1:3000`, both included in the default CORS list.
 - **Path denied:** move the requested file under `WORKSPACE_ROOT`; arbitrary Windows paths are intentionally rejected.
 
-The detailed roadmap and append-only implementation history live in `PROJECT_TRACKER.md`.
+The current option-complete product roadmap and branch-worker protocol live in `M_PLUS_OPTION_COMPLETE_ROADMAP.md`. Append-only implementation history, worker handoffs, verification receipts, blockers, and integration state remain in `PROJECT_TRACKER.md`.

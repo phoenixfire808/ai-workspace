@@ -1295,3 +1295,57 @@ Drew wants a canvas node that can take one larger request, decompose it into use
 - **Placement correction:** managed Ollama previews now emit `CUDA_DEVICE_ORDER=PCI_BUS_ID`, numeric physical masks, and `GGML_CUDA_VISIBLE_DEVICES` in addition to UUID placement receipts. UUID-based visibility alone was observed to be insufficient on this Windows/Ollama path and is no longer used as the sole enforcement mechanism.
 - **Cleanup:** temporary ports `18140` and `18141` are closed; only normal TCP `TIME_WAIT` entries remained. No live backend/frontend listener, Nanbeige service, or baseline Ollama service was killed during final GPU cleanup.
 - **Remaining explicit blocks:** OpenRouter real generation requires Drew's local key and exact model selection; GitHub publication requires deliberate publisher configuration plus per-draft confirmation; real microphone/TTS playback and public retrieval remain device/network acceptance lanes; asynchronous Delegate children still do not automatically merge outputs into downstream graph context.
+
+## 27. Option-complete roadmap and branch-worker coordination — ACTIVE
+
+### 27.1 Product-wide option contract and canonical roadmap — 2026-08-07 04:49 CDT
+
+- **New direction:** Drew wants explicit options for every major configurable capability and a detailed roadmap that can safely support branch workers operating on the same product. Each option must identify its choices, safe default, scope, prerequisites, effect/safety boundary, approval class, persistence, evidence status, trade-offs, restart impact, and rollback.
+- **Canonical tracked roadmap:** `M_PLUS_OPTION_COMPLETE_ROADMAP.md`. It contains the product-wide option catalog, option-registry architecture, Phases 0–9, current evidence baseline, decision queue, suggested non-overlapping worker lanes, context-packet contract, handoff template, parent integration protocol, publication lock, evidence ladder, and final-batch policy.
+- **Hermes handoff pointer:** `.hermes/plans/2026-08-07_044931-option-complete-workspace-roadmap.md` links to the tracked roadmap and Phase 0 entry point. `.hermes/` is ignored, so branch/worktree workers must use the tracked root roadmap rather than relying on the local wrapper.
+- **Authoring baseline:** local and remote `feat/shared-nanbeige-agentic-workspace` were synchronized at `2999857abe9645e4986d43e10e78864d86db1d68` before documentation changes. The roadmap scaffolds existing Phase 26 behavior rather than restarting or forking it.
+- **Fresh live inventory used:** 20 nodes (`9 PASS / 11 BLOCKED`), 231 Library resources (`5 PASS / 219 BLOCKED / 7 DISABLED`), 52 API routes (`23 PASS / 29 BLOCKED`), and 12 approval resources (`2 PASS / 8 BLOCKED / 2 DISABLED`), all with zero FAIL rows and zero invalid-ready registry rows.
+- **Option domains covered:** workspace/persistence; canvas/graph; run/failure behavior; approvals; providers/models/routing; GPU/CPU/runtime placement; all 20 nodes; research; voice; tools/plugins/Hermes; branch workers/Delegate; terminal/processes; Upgrade Center; feedback/publishing; UI/accessibility/observability; security/privacy/network.
+- **Architecture decision:** first implementation slice is one option registry/resolver used by API, UI, capability evidence, and docs. Do not add disconnected dropdowns that cannot validate or enforce their selection. Existing specialized endpoint, hardware, run, terminal, upgrade, and feedback APIs remain authoritative and must not be bypassed.
+- **P0 data-hygiene finding:** the live hardware-profile database currently includes known acceptance artifacts `gpu-one`, `gpu-two`, and `test-pci-order`. They are not valid user options. Phase 0 requires a verified backup and exact-ID cleanup/migration plus stronger import-time test isolation; no live profile was deleted during planning.
+- **Durable preference update:** option-complete roadmaps and branch-worker-ready tracking were saved to persistent user memory and the structured fact store.
+
+#### Active worker / ownership ledger
+
+| Worker/session | Lane / scope | Branch | Worktree | Base SHA | Owned files | Status | Integration |
+|---|---|---|---|---|---|---|---|
+| Parent · current Hermes session | Phase 0 registry, inventory, hygiene, integration, tracker, README | `feat/shared-nanbeige-agentic-workspace` | `C:/Users/Drew/Documents/Jarvis_Context/Projects/ai-workspace` | `2999857abe9645e4986d43e10e78864d86db1d68` | `backend/options_registry.py`, `backend/database.py`, `backend/schema.py`, `backend/capability_matrix.py`, `backend/main.py`, focused tests, option UI, roadmap/tracker/README | active | Parent-owned serial implementation; no concurrent writer |
+| None | No implementation worker is currently authorized or active through this roadmap | — | — | — | — | idle | Drew may add/authorize named lanes later |
+
+#### Worker and publication rules now in force
+
+- Parent-only remains the default. Drew saying he may add branch workers makes the roadmap worker-ready; it does not by itself authorize hidden delegation or new worker dispatch from this session.
+- Every writer gets a unique branch and worktree, exact base SHA, disjoint owned files, sibling-lane awareness, and a tracker row before mutation. Same-worktree concurrent writers are prohibited.
+- Integration hotspots such as `backend/main.py`, `backend/database.py`, `backend/schema.py`, `frontend/components/Canvas.tsx`, `frontend/components/nodes/types.ts`, this roadmap, and this tracker normally remain parent-owned.
+- Every handoff records worker/session identity, `continued_from` if replaced, branch/worktree, base/latest SHA, files changed, verification output, blockers, unverified approval-gated paths, and integration order.
+- Publication lock is currently **OPEN** with no implementation workers. Before publication it must move through `FREEZE_REQUESTED` → `FROZEN` → `PUBLISHING` → `PUBLISHED`, with the parent verifying no active writer still targets the frozen manifest.
+
+#### Lightweight checkpoint
+
+- **GOAL:** Make M⊕ option-complete across workflow, models, hardware, tools, research, voice, terminal, upgrades, feedback, UI, security, and worker orchestration while preserving local-first safety and parent-controlled integration.
+- **DONE:** Current source/live inventories were reconciled; the tracked 54 KB roadmap, decision matrix, phased implementation plan, and worker protocol were created; durable preference was saved.
+- **NOW:** Roadmap artifacts are complete and waiting for Drew's review or Phase 0 direction; no implementation worker is active.
+- **NEXT:** Phase 0 — option schema/registry, full control inventory coverage, import-time test isolation, exact acceptance-profile cleanup with backup, and README/capability synchronization.
+- **BLOCKED / APPROVAL-GATED:** Worker dispatch until Drew explicitly authorizes or assigns workers; OpenRouter exact model/key and cloud generation; feedback publication; real microphone/TTS; public retrieval; app-owned process/runtime mutation; Upgrade Center activation.
+
+### 27.2 Roadmap artifact verification — PASS (2026-08-07 04:49 CDT)
+
+- `M_PLUS_OPTION_COMPLETE_ROADMAP.md` is a tracked **957-line / 54,705-byte** canonical roadmap with 67 headings, all Phases 0–9, 14 repeated option-group matrices plus node/terminal/worker matrices, exact file targets, decision defaults, acceptance tiers, and Now/Done/Next/Blocked.
+- Structural validation found every required roadmap section, all ten phases, the worker handoff template, all four publication-lock transition states, the tracker/README links, and the ignored Hermes wrapper. Bounded documentation scanning found **zero credential-value or private-key candidates**.
+- `git diff --check` passed. Exact tracked scope is documentation-only: modified `PROJECT_TRACKER.md`, modified `README.md`, and new `M_PLUS_OPTION_COMPLETE_ROADMAP.md`; `.hermes/plans/2026-08-07_044931-option-complete-workspace-roadmap.md` is an ignored local handoff pointer. No application code, live profile, listener, model, device, external destination, or worker session was mutated.
+- No runtime test/build was run because this pass changes documentation only. The last accepted source baseline remains synchronized at `2999857abe9645e4986d43e10e78864d86db1d68`; future implementation must re-check the head before using it.
+
+### 27.3 Current-state reconciliation and Phase 0 authorization — 2026-08-07 04:55 CDT
+
+- **Direction received:** Drew asked for a complete current-state read and continued forward progress with detailed Markdown. The existing option-complete roadmap is therefore the active specification; this session is authorized to continue Phase 0 parent-only implementation without restarting the design.
+- **Repository truth:** local and remote source baseline remain synchronized at `2999857abe9645e4986d43e10e78864d86db1d68`. Dirty scope before this checkpoint is documentation-only: new `M_PLUS_OPTION_COMPLETE_ROADMAP.md`, modified `PROJECT_TRACKER.md`, and modified `README.md`.
+- **Runtime truth:** direct loopback probes currently return connection-refused for backend routes; the previously accepted Phase 26 service is not presently live. Phase 0 will deploy only after source acceptance rather than restarting the old artifact preemptively.
+- **Inventory baseline:** last accepted live matrix remains 20 nodes, 231 Library resources, 52 API routes, 12 approval resources, and zero invalid-ready rows. Live hardware-profile evidence previously identified exact acceptance artifacts `gpu-one`, `gpu-two`, and `test-pci-order`.
+- **Import-isolation defect:** tests set `WORKSPACE_DATABASE_URL`, but current `backend/database.py` only reads `WORKSPACE_DB_PATH` and unconditionally constructs SQLite `DATABASE_URL`. Phase 0 must support one explicit database URL or guarantee every test sets the path before importing `backend.main`; acceptance will prove standalone and combined discovery isolation.
+- **Execution packet:** parent owns the option registry, database/schema/capability integration, focused tests, minimal read-only UI, exact-ID cleanup from a verified backup, final acceptance, deployment, and publication. No worker or sibling writer is active or authorized in this ledger.
+- **Safety boundary:** documentation publication is allowed. Data cleanup is limited to a byte-verified database backup plus exact IDs only. No wildcard profile deletion, provider/cloud action, model/device mutation, feedback publication, public retrieval, microphone/TTS action, worker dispatch, or upgrade activation is authorized by Phase 0.
