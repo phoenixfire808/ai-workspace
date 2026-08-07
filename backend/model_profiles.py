@@ -17,7 +17,7 @@ from sqlalchemy import select
 
 from .database import HardwareProfile, ModelEndpointProfile, SessionLocal
 
-ProviderKind = Literal["ollama", "ollama_cloud", "ollama_compatible", "openai_compatible"]
+ProviderKind = Literal["ollama", "ollama_cloud", "ollama_compatible", "openai_compatible", "openrouter"]
 HardwareMode = Literal["auto", "cpu", "single_gpu", "multi_gpu"]
 
 
@@ -45,6 +45,7 @@ _DEFAULT_ENDPOINTS = (
     {"id": "local-nanbeige", "name": "Nanbeige local route", "provider_kind": "openai_compatible", "base_url": "http://127.0.0.1:8080/v1", "credential_alias": "", "settings": {"model": "nanbeige4.2-3b-local", "fallback_policy": "explicit_only"}, "enabled": True, "managed": False},
     {"id": "local-lfm", "name": "LFM local route", "provider_kind": "openai_compatible", "base_url": "http://127.0.0.1:1234/v1", "credential_alias": "", "settings": {"model": "lfm2.5-1.2b-instruct", "fallback_policy": "explicit_only"}, "enabled": False, "managed": False},
     {"id": "ollama-cloud", "name": "Ollama Cloud direct", "provider_kind": "ollama_cloud", "base_url": "https://ollama.com", "credential_alias": "env:OLLAMA_API_KEY", "settings": {"fallback_policy": "explicit_only"}, "enabled": False, "managed": False},
+    {"id": "openrouter", "name": "OpenRouter · explicit cloud route", "provider_kind": "openrouter", "base_url": "https://openrouter.ai/api/v1", "credential_alias": "env:OPENROUTER_API_KEY", "settings": {"model": "", "fallback_policy": "explicit_only", "x_title": "M⊕ AI Visual Workspace"}, "enabled": False, "managed": False},
 )
 _DEFAULT_HARDWARE = (
     {"id": "auto", "name": "Automatic placement", "mode": "auto", "device_ids": [], "settings": {"vram_reserve_mb": 1024, "max_loaded_models": 1}},
@@ -124,8 +125,20 @@ def list_endpoint_profiles(include_readiness: bool = False) -> list[dict[str, An
 def save_endpoint_profile(payload: EndpointProfilePayload) -> dict[str, Any]:
     profile_id = payload.id or f"endpoint-{uuid.uuid4().hex[:12]}"
     base_url = _normalized_url(payload.base_url)
+    if payload.provider_kind == "openrouter" and urlsplit(base_url).hostname not in {"openrouter.ai", "www.openrouter.ai"}:
+        raise ValueError("OpenRouter profiles must use openrouter.ai")
     if payload.credential_alias and not payload.credential_alias.startswith(("env:", "wincred:")):
         raise ValueError("credential alias must use env: or wincred: and must not contain a secret")
+    if payload.provider_kind == "openrouter":
+        model = str(payload.settings.get("model") or "").strip()
+        if len(model) > 300:
+            raise ValueError("OpenRouter model ID is too long")
+        if payload.settings.get("fallback_policy", "explicit_only") != "explicit_only":
+            raise ValueError("OpenRouter fallback policy must remain explicit_only")
+        if payload.enabled and not model:
+            raise ValueError("an exact OpenRouter model ID is required before enabling the profile")
+        if payload.enabled and not payload.credential_alias:
+            raise ValueError("an OpenRouter credential alias is required before enabling the profile")
     with SessionLocal() as db:
         item = db.get(ModelEndpointProfile, profile_id)
         values = payload.model_dump(exclude={"id"})
@@ -159,13 +172,17 @@ def preflight_endpoint(profile_id: str) -> dict[str, Any]:
         if item is None:
             raise KeyError(profile_id)
         profile = _endpoint_dict(item)
+    provider = str(profile["provider_kind"])
+    selected_model = str((profile.get("settings") or {}).get("model") or "").strip()
+    baseline = {"profile_id": profile_id, "provider_kind": provider, "selected_model": selected_model, "fallback_policy": str((profile.get("settings") or {}).get("fallback_policy") or "explicit_only"), "credential_alias": str(profile.get("credential_alias") or ""), "credential_configured": bool(profile.get("credential_configured")), "models": [], "mutation": "none"}
     if not profile["enabled"]:
-        return {"profile_id": profile_id, "ready": False, "reason": "profile is disabled", "models": [], "mutation": "none"}
+        return {**baseline, "ready": False, "reason": "profile_disabled", "exact_model_available": False}
+    if provider == "openrouter" and not selected_model:
+        return {**baseline, "ready": False, "reason": "exact_model_not_selected", "exact_model_available": False}
     secret = _credential(str(profile["credential_alias"]))
     if profile["credential_alias"] and not secret:
-        return {"profile_id": profile_id, "ready": False, "reason": "credential alias is not configured", "models": [], "mutation": "none"}
+        return {**baseline, "ready": False, "reason": "credential_alias_not_configured", "exact_model_available": False}
     headers = {"Authorization": f"Bearer {secret}"} if secret else {}
-    provider = str(profile["provider_kind"])
     path = "/api/tags" if provider in {"ollama", "ollama_cloud", "ollama_compatible"} else "/models"
     try:
         with httpx.Client(timeout=3.0, trust_env=False, follow_redirects=False) as client:
@@ -176,9 +193,10 @@ def preflight_endpoint(profile_id: str) -> dict[str, Any]:
             models = [str(item.get("name") or item.get("model")) for item in body.get("models", []) if isinstance(item, dict)]
         else:
             models = [str(item.get("id")) for item in body.get("data", []) if isinstance(item, dict) and item.get("id")]
-        return {"profile_id": profile_id, "ready": True, "reason": "", "models": models, "provider_kind": provider, "mutation": "none"}
+        exact_model_available = not selected_model or selected_model in models
+        return {**baseline, "ready": exact_model_available, "reason": "" if exact_model_available else "exact_model_not_advertised", "models": models, "exact_model_available": exact_model_available}
     except (httpx.HTTPError, ValueError, TypeError) as exc:
-        return {"profile_id": profile_id, "ready": False, "reason": f"{type(exc).__name__}: endpoint preflight failed", "models": [], "provider_kind": provider, "mutation": "none"}
+        return {**baseline, "ready": False, "reason": f"{type(exc).__name__}: endpoint_preflight_failed", "exact_model_available": False}
 
 
 def generate_with_endpoint(profile_id: str, *, model: str, prompt: str, system_prompt: str = "", settings: dict[str, Any] | None = None) -> str:
@@ -196,6 +214,12 @@ def generate_with_endpoint(profile_id: str, *, model: str, prompt: str, system_p
     if profile["credential_alias"] and not secret:
         raise ValueError("endpoint credential alias is not configured")
     options = {**dict(profile.get("settings") or {}), **dict(settings or {})}
+    if profile["provider_kind"] == "openrouter":
+        selected_model = str((profile.get("settings") or {}).get("model") or "").strip()
+        if not selected_model or model.strip() != selected_model:
+            raise ValueError("OpenRouter generation requires the exact model ID selected on the endpoint profile")
+        if str(options.get("fallback_policy") or "explicit_only") != "explicit_only":
+            raise ValueError("OpenRouter fallback policy must remain explicit_only")
     timeout = min(max(float(options.get("timeout_seconds") or 120), 1), 600)
     headers = {"Authorization": f"Bearer {secret}"} if secret else {}
     messages = []
@@ -216,6 +240,11 @@ def generate_with_endpoint(profile_id: str, *, model: str, prompt: str, system_p
                 response.raise_for_status()
                 payload = response.json()
                 return str((payload.get("message") or {}).get("content") or "")[:200_000]
+            if provider == "openrouter":
+                if options.get("http_referer"):
+                    headers["HTTP-Referer"] = str(options["http_referer"])[:500]
+                if options.get("x_title"):
+                    headers["X-Title"] = str(options["x_title"])[:200]
             body = {"model": model, "messages": messages, "temperature": float(options.get("temperature") or 0.6), "max_tokens": min(max(int(options.get("max_tokens") or 4096), 1), 65536), "stream": False}
             for key in ("top_p", "seed", "stop"):
                 if key in options:
@@ -254,8 +283,32 @@ def gpu_inventory() -> list[dict[str, Any]]:
     return devices
 
 
-def _hardware_dict(item: HardwareProfile) -> dict[str, Any]:
-    inventory = {device["uuid"]: device for device in gpu_inventory()}
+def gpu_process_inventory() -> list[dict[str, Any]]:
+    executable = shutil.which("nvidia-smi")
+    if not executable:
+        return []
+    command = [executable, "--query-compute-apps=pid,gpu_uuid,process_name,used_memory", "--format=csv,noheader,nounits"]
+    try:
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=5, shell=False, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if completed.returncode:
+        return []
+    processes: list[dict[str, Any]] = []
+    for line in completed.stdout.splitlines()[:128]:
+        parts = [part.strip() for part in line.split(",", 3)]
+        if len(parts) != 4:
+            continue
+        try:
+            processes.append({"pid": int(parts[0]), "gpu_uuid": parts[1], "process_name": os.path.basename(parts[2])[:160], "used_memory_mb": int(parts[3])})
+        except ValueError:
+            continue
+    return processes
+
+
+def _hardware_dict(item: HardwareProfile, inventory: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+    if inventory is None:
+        inventory = {device["uuid"]: device for device in gpu_inventory()}
     missing = [device for device in item.device_ids or [] if device not in inventory]
     return {"id": item.id, "name": item.name, "mode": item.mode, "device_ids": item.device_ids or [], "settings": item.settings or {}, "ready": not missing, "missing_devices": missing, "devices": [inventory[device] for device in item.device_ids or [] if device in inventory], "updated_at": item.updated_at.isoformat() if item.updated_at else None}
 
@@ -263,23 +316,38 @@ def _hardware_dict(item: HardwareProfile) -> dict[str, Any]:
 def list_hardware_profiles() -> list[dict[str, Any]]:
     _seed_defaults()
     devices = gpu_inventory()
+    inventory = {device["uuid"]: device for device in devices}
     with SessionLocal() as db:
+        if len(devices) >= 2 and db.get(HardwareProfile, "multi-gpu-all") is None:
+            db.add(HardwareProfile(
+                id="multi-gpu-all",
+                name="All NVIDIA GPUs · runtime split",
+                mode="multi_gpu",
+                device_ids=[str(device["uuid"]) for device in devices[:2]],
+                settings={"vram_reserve_mb": 1024, "max_loaded_models": 1, "split_strategy": "runtime_auto"},
+            ))
         for device in devices:
             profile_id = f"gpu-{device['uuid'].lower().replace('gpu-', '')[:24]}"
             if db.get(HardwareProfile, profile_id) is None:
                 db.add(HardwareProfile(id=profile_id, name=device["name"], mode="single_gpu", device_ids=[device["uuid"]], settings={"vram_reserve_mb": 1024, "max_loaded_models": 1}))
         db.commit()
         items = list(db.scalars(select(HardwareProfile).order_by(HardwareProfile.name)).all())
-        return [_hardware_dict(item) for item in items]
+        return [_hardware_dict(item, inventory) for item in items]
 
 
 def save_hardware_profile(payload: HardwareProfilePayload) -> dict[str, Any]:
     profile_id = payload.id or f"hardware-{uuid.uuid4().hex[:12]}"
-    known = {item["uuid"] for item in gpu_inventory()}
+    devices = gpu_inventory()
+    inventory = {item["uuid"]: item for item in devices}
+    known = set(inventory)
+    if len(set(payload.device_ids)) != len(payload.device_ids):
+        raise ValueError("hardware profiles cannot repeat a GPU UUID")
     if payload.mode in {"single_gpu", "multi_gpu"} and (not payload.device_ids or any(item not in known for item in payload.device_ids)):
         raise ValueError("hardware profile references an unavailable GPU UUID")
     if payload.mode == "single_gpu" and len(payload.device_ids) != 1:
         raise ValueError("single-GPU profiles require exactly one GPU UUID")
+    if payload.mode == "multi_gpu" and len(payload.device_ids) < 2:
+        raise ValueError("multi-GPU profiles require at least two GPU UUIDs")
     with SessionLocal() as db:
         item = db.get(HardwareProfile, profile_id)
         values = payload.model_dump(exclude={"id"})
@@ -291,7 +359,7 @@ def save_hardware_profile(payload: HardwareProfilePayload) -> dict[str, Any]:
                 setattr(item, key, value)
         db.commit()
         db.refresh(item)
-        return _hardware_dict(item)
+        return _hardware_dict(item, inventory)
 
 
 def managed_ollama_launch_spec(profile_id: str, port: int) -> dict[str, Any]:
@@ -308,11 +376,31 @@ def managed_ollama_launch_spec(profile_id: str, port: int) -> dict[str, Any]:
     environment = {"OLLAMA_HOST": f"127.0.0.1:{port}"}
     if profile["mode"] == "cpu":
         environment["CUDA_VISIBLE_DEVICES"] = "-1"
+        environment["GGML_CUDA_VISIBLE_DEVICES"] = "-1"
     elif profile["mode"] in {"single_gpu", "multi_gpu"}:
-        environment["CUDA_VISIBLE_DEVICES"] = ",".join(profile["device_ids"])
+        devices = {str(device["uuid"]): device for device in gpu_inventory()}
+        try:
+            visible_indices = [str(devices[device_id]["index"]) for device_id in profile["device_ids"]]
+        except KeyError as exc:
+            raise ValueError("hardware profile device inventory changed; refresh before launch") from exc
+        environment["CUDA_VISIBLE_DEVICES"] = ",".join(visible_indices)
+        environment["GGML_CUDA_VISIBLE_DEVICES"] = ",".join(visible_indices)
     settings = profile["settings"]
     if "flash_attention" in settings:
         environment["OLLAMA_FLASH_ATTENTION"] = "1" if settings["flash_attention"] else "0"
     if settings.get("kv_cache_type") in {"f16", "q8_0", "q4_0"}:
         environment["OLLAMA_KV_CACHE_TYPE"] = str(settings["kv_cache_type"])
-    return {"profile_id": profile_id, "command": ["ollama", "serve"], "environment": environment, "base_url": f"http://127.0.0.1:{port}", "mutation": "approval_required", "observed_placement": None}
+    return {
+        "profile_id": profile_id,
+        "command": ["ollama", "serve"],
+        "environment": environment,
+        "base_url": f"http://127.0.0.1:{port}",
+        "mutation": "approval_required",
+        "placement": {
+            "mode": profile["mode"],
+            "device_ids": profile["device_ids"],
+            "split_strategy": settings.get("split_strategy", "runtime_auto"),
+            "vram_reserve_mb": settings.get("vram_reserve_mb"),
+        },
+        "observed_placement": None,
+    }

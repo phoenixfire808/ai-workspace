@@ -21,6 +21,7 @@ import AgentNode from "./nodes/AgentNode";
 import ApprovalReview from "./ApprovalReview";
 import ChatPanel from "./ChatPanel";
 import ControlCenterPanel from "./ControlCenterPanel";
+import FeedbackPanel from "./FeedbackPanel";
 import LibraryPanel from "./LibraryPanel";
 import BuzzNode from "./nodes/BuzzNode";
 import TtsNode from "./nodes/TtsNode";
@@ -709,6 +710,8 @@ export default function Canvas() {
           <ChatPanel />
           <div className="panel-divider" />
           <ControlCenterPanel />
+          <div className="panel-divider" />
+          <FeedbackPanel activeRunId={activeRunId} />
         </aside>}
       </div>
       {pendingApproval && <ApprovalReview

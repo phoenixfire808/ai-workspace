@@ -296,6 +296,10 @@ button { color: inherit; }
 .run-step-waiting_approval, .run-step-waiting_input { border-left-color: #f6c76b; }
 .run-step summary { display: grid; grid-template-columns: 1fr auto; gap: 2px 7px; }
 .run-step summary small { grid-column: 1 / -1; color: var(--muted); }
+.timer-controls, .feedback-panel { display: grid; gap: 7px; }
+.timer-controls { padding: 8px; border: 1px solid var(--line); border-radius: 7px; background: rgba(4, 11, 21, .3); }
+.timer-controls small { color: var(--muted); }
+.feedback-panel .upgrade-row button { min-width: 82px; }
 
 @media (max-width: 1180px) {
   .topbar { gap: 10px; padding-inline: 14px; }

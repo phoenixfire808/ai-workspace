@@ -5,7 +5,7 @@ import { NodeField } from "./nodes/NodeFrame";
 import type { WorkspaceNodeData } from "./nodes/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
-type Endpoint = { id: string; name: string; provider_kind: string; enabled: boolean; credential_configured: boolean };
+type Endpoint = { id: string; name: string; provider_kind: string; base_url: string; credential_alias: string; settings?: Record<string, unknown>; enabled: boolean; credential_configured: boolean; };
 type Hardware = { id: string; name: string; mode: string; ready: boolean; missing_devices?: string[] };
 
 export default function ModelRouteSettings({ data }: { data: WorkspaceNodeData }) {
@@ -19,12 +19,15 @@ export default function ModelRouteSettings({ data }: { data: WorkspaceNodeData }
     ]).catch(() => undefined);
   }, []);
   const change = (patch: Record<string, unknown>) => data.onChange?.(patch);
+  const openrouter = endpoints.find((item) => item.id === "openrouter");
+  const isOpenRouter = String(data.provider ?? "") === "openrouter";
   return <details className="node-advanced nodrag" open={open} onToggle={(event) => setOpen((event.currentTarget as HTMLDetailsElement).open)}>
     <summary>Advanced route & execution</summary>
     <NodeField label="Endpoint profile"><select className="node-input nodrag" value={String(data.endpoint_profile ?? "")} onChange={(event) => change({ endpoint_profile: event.target.value })}><option value="">Use selected provider default</option>{endpoints.map((item) => <option key={item.id} value={item.id} disabled={!item.enabled || !item.credential_configured}>{item.name} · {item.provider_kind}{!item.enabled ? " · disabled" : !item.credential_configured ? " · credential missing" : ""}</option>)}</select></NodeField>
+    {isOpenRouter && openrouter && !openrouter.enabled && <small>Configure the exact model ID and credential alias in Control Center before enabling this explicit cloud route.</small>}
     <NodeField label="Exact model ID"><input className="node-input nodrag" value={String(data.model ?? "")} onChange={(event) => change({ model: event.target.value })} /></NodeField>
     <NodeField label="Hardware profile"><select className="node-input nodrag" value={String(data.hardware_profile ?? "auto")} onChange={(event) => change({ hardware_profile: event.target.value })}>{hardware.map((item) => <option key={item.id} value={item.id} disabled={!item.ready}>{item.name} · {item.mode}{!item.ready ? " · unavailable" : ""}</option>)}</select></NodeField>
-    <NodeField label="Fallback policy"><select className="node-input nodrag" value={String(data.fallback_policy ?? "explicit_only")} onChange={(event) => change({ fallback_policy: event.target.value })}><option value="explicit_only">Explicit route only</option><option value="approved_ordered">Ordered routes after workflow approval</option><option value="cloud_enabled">Automatic only on cloud-enabled workflows</option></select></NodeField>
+    <NodeField label="Fallback policy"><select className="node-input nodrag" disabled={isOpenRouter} value={isOpenRouter ? "explicit_only" : String(data.fallback_policy ?? "explicit_only")} onChange={(event) => change({ fallback_policy: event.target.value })}><option value="explicit_only">Explicit route only</option><option value="approved_ordered">Ordered routes after workflow approval</option><option value="cloud_enabled">Automatic only on cloud-enabled workflows</option></select></NodeField>
     <NodeField label="Route strategy"><select className="node-input nodrag" value={String(data.route_strategy ?? "user_ordered")} onChange={(event) => change({ route_strategy: event.target.value })}><option value="user_ordered">User ordered</option><option value="local_preferred">Local preferred</option><option value="cloud_preferred">Cloud preferred</option><option value="latency">Latency priority</option><option value="vram_fit">VRAM fit</option></select></NodeField>
     <NodeField label="Approval policy"><select className="node-input nodrag" value={String(data.approval_policy ?? "inherit")} onChange={(event) => change({ approval_policy: event.target.value })}><option value="inherit">Inherit workflow</option><option value="preflight">Preflight</option><option value="per_action">Per action</option><option value="step_through">Step through</option></select></NodeField>
     <NodeField label="Context length"><input className="node-input nodrag" type="number" min={512} max={262144} step={512} value={Number(data.num_ctx ?? 4096)} onChange={(event) => change({ num_ctx: Number(event.target.value) })} /></NodeField>

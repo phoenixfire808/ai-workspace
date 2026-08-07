@@ -529,6 +529,13 @@ def _model_output(prompt: str, data: dict[str, Any]) -> str:
         return _minimax_output(prompt, data)
     if provider == "ollama":
         return _ollama_output(prompt, data)
+    if provider == "openrouter":
+        try:
+            return generate_with_endpoint("openrouter", model=str(data.get("model") or ""), prompt=prompt, system_prompt=str(data.get("system_prompt") or ""), settings=data)
+        except KeyError as exc:
+            raise NodeExecutionError("the OpenRouter endpoint profile is not registered", "openrouter_profile_unknown") from exc
+        except (RuntimeError, ValueError) as exc:
+            raise NodeExecutionError("OpenRouter is not ready or rejected the request", "openrouter_not_ready") from exc
     raise NodeExecutionError("unsupported coder model provider", "model_provider_invalid")
 
 

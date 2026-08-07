@@ -8,6 +8,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 _TEST_ROOT = Path(tempfile.mkdtemp(prefix="mo-durable-runtime-"))
 os.environ["WORKSPACE_ROOT"] = str(_TEST_ROOT)
@@ -79,12 +80,64 @@ class DurableRuntimeAcceptance(unittest.TestCase):
         plugins = self.client.get("/api/plugins")
         self.assertEqual(plugins.status_code, 200, plugins.text)
         self.assertEqual({item["plugin_id"] for item in plugins.json()["plugins"]}, {"run_annotation", "context_selector"})
-        endpoints = self.client.get("/api/model-endpoints")
+        with patch("backend.model_profiles.gpu_inventory") as endpoint_gpu_inventory:
+            endpoints = self.client.get("/api/model-endpoints")
+        endpoint_gpu_inventory.assert_not_called()
         hardware = self.client.get("/api/hardware/profiles")
         self.assertEqual(endpoints.status_code, 200, endpoints.text)
         self.assertEqual(hardware.status_code, 200, hardware.text)
         self.assertTrue(any(item["id"] == "local-ollama" for item in endpoints.json()["profiles"]))
+        openrouter = next(item for item in endpoints.json()["profiles"] if item["id"] == "openrouter")
+        self.assertFalse(openrouter["enabled"])
+        self.assertEqual(openrouter["settings"]["fallback_policy"], "explicit_only")
         self.assertTrue(any(item["id"] == "auto" for item in hardware.json()["profiles"]))
+
+        rejected_host = self.client.post("/api/model-endpoints", json={"id": "openrouter-bad-host", "name": "Bad host", "provider_kind": "openrouter", "base_url": "https://example.com/v1", "credential_alias": "env:OPENROUTER_API_KEY", "settings": {"model": "example/model", "fallback_policy": "explicit_only"}, "enabled": False, "managed": False})
+        self.assertEqual(rejected_host.status_code, 400, rejected_host.text)
+        rejected_model = self.client.post("/api/model-endpoints", json={"id": "openrouter-no-model", "name": "No model", "provider_kind": "openrouter", "base_url": "https://openrouter.ai/api/v1", "credential_alias": "env:OPENROUTER_API_KEY", "settings": {"fallback_policy": "explicit_only"}, "enabled": True, "managed": False})
+        self.assertEqual(rejected_model.status_code, 400, rejected_model.text)
+
+        matrix_response = self.client.get("/api/capabilities/matrix")
+        self.assertEqual(matrix_response.status_code, 200, matrix_response.text)
+        matrix = matrix_response.json()
+        self.assertEqual(matrix["registry_honesty"]["invalid_ready"], [])
+        route_status = {item["path"]: item["status"] for item in matrix["routes"]}
+        self.assertEqual(route_status["/api/capabilities/matrix"], "PASS")
+        self.assertEqual(route_status["/api/capabilities/export.md"], "PASS")
+        export = self.client.get("/api/capabilities/export.md")
+        self.assertEqual(export.status_code, 200, export.text)
+        self.assertTrue(export.headers["content-type"].startswith("text/markdown"))
+        self.assertIn("# AI Workspace capability acceptance matrix", export.text)
+
+        from backend.model_profiles import HardwareProfilePayload, list_hardware_profiles, save_hardware_profile
+
+        devices = [
+            {"index": 0, "uuid": "GPU-one", "name": "GPU One", "memory_total_mb": 8192, "memory_free_mb": 4096, "compute_capability": "8.0"},
+            {"index": 1, "uuid": "GPU-two", "name": "GPU Two", "memory_total_mb": 8192, "memory_free_mb": 4096, "compute_capability": "8.0"},
+        ]
+        with patch("backend.model_profiles.gpu_inventory", return_value=devices):
+            with self.assertRaisesRegex(ValueError, "cannot repeat"):
+                save_hardware_profile(HardwareProfilePayload(name="Duplicate", mode="multi_gpu", device_ids=["GPU-one", "GPU-one"]))
+            with self.assertRaisesRegex(ValueError, "at least two"):
+                save_hardware_profile(HardwareProfilePayload(name="Single as multi", mode="multi_gpu", device_ids=["GPU-one"]))
+        with patch("backend.model_profiles.gpu_inventory", return_value=devices) as hardware_gpu_inventory:
+            list_hardware_profiles()
+        hardware_gpu_inventory.assert_called_once()
+
+        draft = self.client.post("/api/feedback", json={"kind": "bug", "title": "Local draft", "description": "Stored only in the temporary acceptance database", "steps": "No external publication"})
+        self.assertEqual(draft.status_code, 200, draft.text)
+        draft_payload = draft.json()
+        self.assertEqual(draft_payload["status"], "draft")
+        self.assertFalse(draft_payload["context_receipt"]["raw_content_logged"])
+        with patch("backend.feedback._repository", return_value="example/workspace"), patch("backend.feedback._token", return_value=""):
+            publish_preview = self.client.get(f"/api/feedback/{draft_payload['id']}/publish-preview")
+        self.assertEqual(publish_preview.status_code, 200, publish_preview.text)
+        self.assertEqual(publish_preview.json()["status"], "blocked")
+        self.assertEqual(publish_preview.json()["failure_class"], "feedback_publisher_disabled")
+        with patch("backend.main.publish_feedback_to_github") as publish:
+            rejected_publish = self.client.post(f"/api/feedback/{draft_payload['id']}/publish", json={"confirmation": "DO_NOT_PUBLISH"})
+        self.assertEqual(rejected_publish.status_code, 422, rejected_publish.text)
+        publish.assert_not_called()
 
     def test_02_start_split_merge_and_plugin(self) -> None:
         graph = self.graph(

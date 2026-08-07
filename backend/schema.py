@@ -89,6 +89,19 @@ class ValidationPayload(BaseModel):
     graph: GraphDocument
 
 
+class FeedbackPayload(BaseModel):
+    kind: Literal["bug", "feature"]
+    title: str = Field(min_length=3, max_length=240)
+    description: str = Field(min_length=1, max_length=20_000)
+    steps: str = Field(default="", max_length=20_000)
+    project_id: str | None = Field(default=None, max_length=64)
+    run_id: str | None = Field(default=None, max_length=64)
+
+
+class FeedbackPublishPayload(BaseModel):
+    confirmation: Literal["PUBLISH_TO_GITHUB"]
+
+
 class ChatStreamPayload(BaseModel):
     message: str = Field(min_length=1, max_length=200_000)
     project_id: str | None = Field(default=None, max_length=64)

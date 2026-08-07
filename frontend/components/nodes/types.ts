@@ -1,7 +1,7 @@
 import type { Node } from "@xyflow/react";
 
 export type NodeKind = "start" | "buzz" | "tts" | "planner" | "coder" | "file" | "task" | "agent" | "tool" | "runtime" | "review" | "chat" | "split" | "merge" | "context" | "plugin" | "delegate" | "search" | "research" | "source_context";
-export type ModelProvider = "nanbeige" | "lfm" | "minimax" | "ollama";
+export type ModelProvider = "nanbeige" | "lfm" | "minimax" | "ollama" | "openrouter";
 
 export interface WorkspaceNodeData extends Record<string, unknown> {
   label: string;
@@ -21,6 +21,10 @@ export const MODEL_OPTIONS: Record<ModelProvider, { label: string; model: string
     label: "Ollama · installed local models",
     model: "",
   },
+  openrouter: {
+    label: "OpenRouter · explicit cloud route",
+    model: "",
+  },
 };
 
 export const NODE_META: Record<NodeKind, { label: string; icon: string; accent: string; hint: string }> = {
@@ -28,7 +32,7 @@ export const NODE_META: Record<NodeKind, { label: string; icon: string; accent: 
   buzz: { label: "Buzz transcription", icon: "◌", accent: "node-buzz", hint: "Whisper audio" },
   tts: { label: "Local TTS", icon: "◖", accent: "node-tts", hint: "Manual local playback" },
   planner: { label: "Planner", icon: "✦", accent: "node-planner", hint: "Intent to plan" },
-  coder: { label: "Coder model", icon: "⌘", accent: "node-coder", hint: "Ollama installed / local alternatives" },
+  coder: { label: "Coder model", icon: "⌘", accent: "node-coder", hint: "Local or explicitly selected provider" },
   file: { label: "File I/O", icon: "▣", accent: "node-file", hint: "Workspace files" },
   task: { label: "Task tracker", icon: "☷", accent: "node-task", hint: "SQLite task" },
   agent: { label: "Agent reaction", icon: "↗", accent: "node-agent", hint: "Allowlisted launch" },

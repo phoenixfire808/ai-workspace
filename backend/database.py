@@ -154,6 +154,24 @@ class HardwareProfile(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
 
+class FeedbackItem(Base):
+    __tablename__ = "feedback_items"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, index=True)
+    kind: Mapped[str] = mapped_column(String(16), index=True)
+    title: Mapped[str] = mapped_column(String(240))
+    description: Mapped[str] = mapped_column(Text, default="")
+    steps: Mapped[str] = mapped_column(Text, default="")
+    project_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    run_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    context_receipt: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(32), default="draft", index=True)
+    github_issue_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    github_url: Mapped[str] = mapped_column(String(1000), default="")
+    failure_class: Mapped[str] = mapped_column(String(120), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
 Base.metadata.create_all(bind=engine)
 
 

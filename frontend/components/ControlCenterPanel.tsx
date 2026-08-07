@@ -48,6 +48,12 @@ type OllamaInventory = {
   models: Array<{ name: string; size?: number | null; openai_advertised?: boolean }>;
 };
 
+type EndpointProfile = { id: string; name: string; provider_kind: string; base_url: string; credential_alias: string; credential_configured: boolean; settings: Record<string, unknown>; enabled: boolean; managed: boolean };
+type EndpointPreflight = { ready: boolean; reason: string; selected_model?: string; exact_model_available?: boolean; credential_configured?: boolean; fallback_policy?: string; mutation?: string };
+type GpuDevice = { index: number; uuid: string; name: string; memory_total_mb: number; memory_free_mb: number; compute_capability: string };
+type GpuProcess = { pid: number; gpu_uuid: string; process_name: string; used_memory_mb: number };
+type HardwareProfile = { id: string; name: string; mode: string; device_ids: string[]; settings: Record<string, unknown>; ready: boolean; missing_devices: string[]; devices: GpuDevice[] };
+
 async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
   if (!response.ok) throw new Error(`Control Center request failed (${response.status}).`);
@@ -68,6 +74,15 @@ export default function ControlCenterPanel() {
   const [inventory, setInventory] = useState<UpgradeInventory | null>(null);
   const [upgradePreflight, setUpgradePreflight] = useState<UpgradePreflight | null>(null);
   const [ollamaInventory, setOllamaInventory] = useState<OllamaInventory | null>(null);
+  const [endpoints, setEndpoints] = useState<EndpointProfile[]>([]);
+  const [selectedEndpoint, setSelectedEndpoint] = useState("");
+  const [endpointModel, setEndpointModel] = useState("");
+  const [endpointAlias, setEndpointAlias] = useState("");
+  const [endpointEnabled, setEndpointEnabled] = useState(false);
+  const [endpointPreflight, setEndpointPreflight] = useState<EndpointPreflight | null>(null);
+  const [gpus, setGpus] = useState<GpuDevice[]>([]);
+  const [gpuProcesses, setGpuProcesses] = useState<GpuProcess[]>([]);
+  const [hardwareProfiles, setHardwareProfiles] = useState<HardwareProfile[]>([]);
   const [terminalCommand, setTerminalCommand] = useState("git status --short");
   const [terminalResult, setTerminalResult] = useState<TerminalResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -88,11 +103,19 @@ export default function ControlCenterPanel() {
       readJson<{ profiles: RuntimeProfile[] }>(`${API_URL}/api/runtime/profiles`),
       refreshUpgrade(),
       readJson<OllamaInventory>(`${API_URL}/api/ollama/models`),
-    ]).then(([runtime, _upgrade, ollama]) => {
+      readJson<{ profiles: EndpointProfile[] }>(`${API_URL}/api/model-endpoints`),
+      readJson<{ devices: GpuDevice[]; processes: GpuProcess[] }>(`${API_URL}/api/hardware/gpus`),
+      readJson<{ profiles: HardwareProfile[] }>(`${API_URL}/api/hardware/profiles`),
+    ]).then(([runtime, _upgrade, ollama, endpointInventory, gpuInventory, hardwareInventory]) => {
       if (cancelled) return;
       setProfiles(runtime.profiles);
       setSelectedProfile(runtime.profiles[0]?.profile_id ?? "");
       setOllamaInventory(ollama);
+      setEndpoints(endpointInventory.profiles);
+      setSelectedEndpoint(endpointInventory.profiles.find((item) => item.provider_kind === "openrouter")?.id ?? endpointInventory.profiles[0]?.id ?? "");
+      setGpus(gpuInventory.devices);
+      setGpuProcesses(gpuInventory.processes ?? []);
+      setHardwareProfiles(hardwareInventory.profiles);
     }).catch((error: unknown) => {
       if (!cancelled) setNotice(error instanceof Error ? error.message : "Control Center is offline.");
     });
@@ -109,6 +132,34 @@ export default function ControlCenterPanel() {
   }, [selectedProfile]);
 
   const selected = profiles.find((profile) => profile.profile_id === selectedProfile);
+  const endpoint = endpoints.find((item) => item.id === selectedEndpoint);
+
+  useEffect(() => {
+    if (!endpoint) return;
+    setEndpointModel(String(endpoint.settings.model ?? ""));
+    setEndpointAlias(endpoint.credential_alias);
+    setEndpointEnabled(endpoint.enabled);
+    setEndpointPreflight(null);
+  }, [endpoint]);
+
+  async function saveEndpoint() {
+    if (!endpoint || endpoint.provider_kind !== "openrouter") return;
+    setBusy(true); setNotice("");
+    try {
+      const saved = await readJson<EndpointProfile>(`${API_URL}/api/model-endpoints`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...endpoint, credential_alias: endpointAlias, enabled: endpointEnabled, settings: { ...endpoint.settings, model: endpointModel, fallback_policy: "explicit_only" } }) });
+      setEndpoints((current) => current.map((item) => item.id === saved.id ? saved : item));
+      setNotice("Endpoint profile saved locally. No provider request was sent.");
+    } catch (error) { setNotice(error instanceof Error ? error.message : "Endpoint profile save failed."); }
+    finally { setBusy(false); }
+  }
+
+  async function preflightEndpoint() {
+    if (!endpoint) return;
+    setBusy(true); setNotice("");
+    try { setEndpointPreflight(await readJson<EndpointPreflight>(`${API_URL}/api/model-endpoints/${encodeURIComponent(endpoint.id)}/preflight`)); }
+    catch (error) { setNotice(error instanceof Error ? error.message : "Endpoint preflight failed."); }
+    finally { setBusy(false); }
+  }
 
   async function previewTerminal() {
     setBusy(true);
@@ -160,6 +211,29 @@ export default function ControlCenterPanel() {
           ))}
         </div>
       )}
+
+      <div className="panel-divider" />
+      <div className="mini-section-title">MODEL ENDPOINTS · EXPLICIT ONLY</div>
+      <select className="control-select" value={selectedEndpoint} onChange={(event) => setSelectedEndpoint(event.target.value)} aria-label="Model endpoint profile">{endpoints.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.enabled ? "enabled" : "disabled"}</option>)}</select>
+      {endpoint && <div className="profile-card">
+        <div className="profile-card-title"><strong>{endpoint.provider_kind}</strong><span className={stateClass(endpoint.enabled ? "ready" : "disabled")}>{endpoint.enabled ? "enabled" : "disabled"}</span></div>
+        <small>{endpoint.base_url}</small>
+        {endpoint.provider_kind === "openrouter" && <>
+          <label className="control-label">Exact model ID<input className="control-input" value={endpointModel} onChange={(event) => setEndpointModel(event.target.value)} placeholder="provider/model" /></label>
+          <label className="control-label">Credential alias only<input className="control-input" value={endpointAlias} onChange={(event) => setEndpointAlias(event.target.value)} placeholder="env:OPENROUTER_API_KEY or wincred:target" /></label>
+          <label className="checkbox-row"><input type="checkbox" checked={endpointEnabled} onChange={(event) => setEndpointEnabled(event.target.checked)} /><span>Enable this exact explicit route</span></label>
+          <small>Fallback: explicit_only · raw keys are rejected.</small>
+          <button className="button button-quiet full-width" type="button" disabled={busy} onClick={() => void saveEndpoint()}>Save local profile</button>
+        </>}
+        <button className="button button-quiet full-width" type="button" disabled={busy} onClick={() => void preflightEndpoint()}>Preflight selected endpoint</button>
+        {endpointPreflight && <div className="preflight-result"><span className={stateClass(endpointPreflight.ready ? "ready" : "blocked")}>{endpointPreflight.ready ? "ready" : "blocked"}</span><small>{endpointPreflight.reason || "exact model advertised"} · mutation: {endpointPreflight.mutation ?? "none"}</small></div>}
+      </div>}
+
+      <div className="panel-divider" />
+      <div className="mini-section-title">GPU EVIDENCE · READ ONLY</div>
+      {gpus.map((gpu) => <div className="upgrade-row" key={gpu.uuid}><span title={gpu.uuid}>GPU {gpu.index} · {gpu.name}</span><span className={stateClass("ready")}>{gpu.memory_free_mb}/{gpu.memory_total_mb} MiB free</span></div>)}
+      {gpuProcesses.map((process) => <div className="profile-lane" key={`${process.gpu_uuid}-${process.pid}`}><span>PID {process.pid} · {process.process_name}</span><small title={process.gpu_uuid}>{process.used_memory_mb} MiB · {process.gpu_uuid.slice(0, 18)}…</small></div>)}
+      {hardwareProfiles.map((profile) => <div className="profile-lane" key={profile.id}><span>{profile.name} · {profile.mode}</span><small>{profile.ready ? `${profile.device_ids.length || "auto"} device(s) declared` : `missing ${profile.missing_devices.join(", ")}`}{profile.mode === "multi_gpu" ? ` · split ${String(profile.settings.split_strategy ?? "runtime_auto")} · observed placement not yet proven` : ""}</small></div>)}
 
       <div className="panel-divider" />
       <div className="mini-section-title">TERMINAL PREVIEW</div>

@@ -13,11 +13,12 @@ from typing import Any
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from langchain_core.messages import HumanMessage
 from sse_starlette.sse import EventSourceResponse
 from sqlalchemy.orm import Session
 
-from .database import Project, SessionLocal, get_db, list_projects
+from .database import FeedbackItem, Project, SessionLocal, get_db, list_projects, utc_now
 from .agent_engine import (
     DEFAULT_LFM_BASE_URL,
     DEFAULT_LFM_MODEL,
@@ -37,7 +38,7 @@ from .graph import (
     transcribe_audio,
     validate_graph,
 )
-from .schema import ChatStreamPayload, ProjectPayload, RunChatPayload, RunDecisionPayload, RunPayload, ValidationPayload
+from .schema import ChatStreamPayload, FeedbackPayload, FeedbackPublishPayload, ProjectPayload, RunChatPayload, RunDecisionPayload, RunPayload, ValidationPayload
 from .execution_runtime import (
     cancel_run,
     create_run,
@@ -57,6 +58,7 @@ from .model_profiles import (
     HardwareProfilePayload,
     delete_endpoint_profile,
     gpu_inventory,
+    gpu_process_inventory,
     list_endpoint_profiles,
     list_hardware_profiles,
     managed_ollama_launch_spec,
@@ -80,6 +82,8 @@ from .library import (
 )
 from .tools import WORKSPACE_TOOL_CATALOG, WORKSPACE_TOOL_NAMES
 from .hermes_adapter import hermes_capability_audit
+from .capability_matrix import build_capability_matrix, capability_matrix_markdown
+from .feedback import FeedbackPublishError, github_publish_preview, publish_feedback_to_github
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -242,6 +246,16 @@ def get_hermes_capability_audit() -> dict[str, Any]:
     return hermes_capability_audit()
 
 
+@app.get("/api/capabilities/matrix")
+def get_capability_matrix() -> dict[str, Any]:
+    return build_capability_matrix(app.routes)
+
+
+@app.get("/api/capabilities/export.md", response_class=PlainTextResponse)
+def export_capability_matrix() -> PlainTextResponse:
+    return PlainTextResponse(capability_matrix_markdown(build_capability_matrix(app.routes)), media_type="text/markdown")
+
+
 @app.get("/api/plugins")
 def plugins() -> dict[str, Any]:
     return {"plugins": plugin_catalog(), "mutation": "none"}
@@ -353,7 +367,7 @@ def model_endpoint_delete(profile_id: str) -> dict[str, str]:
 
 @app.get("/api/hardware/gpus")
 def hardware_gpus() -> dict[str, Any]:
-    return {"devices": gpu_inventory(), "mutation": "none"}
+    return {"devices": gpu_inventory(), "processes": gpu_process_inventory(), "mutation": "none", "process_fields": ["pid", "gpu_uuid", "process_name", "used_memory_mb"]}
 
 
 @app.get("/api/hardware/profiles")
@@ -393,6 +407,84 @@ def upgrades_inventory() -> dict[str, Any]:
 @app.get("/api/upgrades/preflight")
 def upgrades_preflight() -> dict[str, Any]:
     return upgrade_preflight()
+
+
+def _feedback_response(item: FeedbackItem) -> dict[str, Any]:
+    return {
+        "id": item.id,
+        "kind": item.kind,
+        "title": item.title,
+        "description": item.description,
+        "steps": item.steps,
+        "project_id": item.project_id,
+        "run_id": item.run_id,
+        "context_receipt": item.context_receipt or {},
+        "status": item.status,
+        "github_issue_number": item.github_issue_number,
+        "github_url": item.github_url,
+        "failure_class": item.failure_class,
+        "created_at": item.created_at.isoformat() if item.created_at else None,
+        "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+    }
+
+
+@app.get("/api/feedback")
+def feedback_list(limit: int = 100, db: Session = Depends(get_db)) -> dict[str, Any]:
+    bounded_limit = min(max(int(limit), 1), 200)
+    items = db.query(FeedbackItem).order_by(FeedbackItem.updated_at.desc()).limit(bounded_limit).all()
+    return {"items": [_feedback_response(item) for item in items], "mutation": "none"}
+
+
+@app.post("/api/feedback")
+def feedback_create(payload: FeedbackPayload, db: Session = Depends(get_db)) -> dict[str, Any]:
+    item = FeedbackItem(
+        id=f"feedback-{uuid.uuid4().hex[:16]}",
+        kind=payload.kind,
+        title=payload.title.strip(),
+        description=payload.description.strip(),
+        steps=payload.steps.strip(),
+        project_id=payload.project_id,
+        run_id=payload.run_id,
+        context_receipt={"source": "local-ui", "created_at": utc_now().isoformat(), "raw_content_logged": False},
+        status="draft",
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return _feedback_response(item)
+
+
+@app.get("/api/feedback/{feedback_id}/publish-preview")
+def feedback_publish_preview(feedback_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+    item = db.get(FeedbackItem, feedback_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Feedback draft not found")
+    return {"feedback_id": feedback_id, **github_publish_preview(item)}
+
+
+@app.post("/api/feedback/{feedback_id}/publish")
+def feedback_publish(feedback_id: str, payload: FeedbackPublishPayload, db: Session = Depends(get_db)) -> dict[str, Any]:
+    item = db.get(FeedbackItem, feedback_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Feedback draft not found")
+    if item.status == "published" and item.github_url:
+        return _feedback_response(item)
+    try:
+        receipt = publish_feedback_to_github(item)
+    except FeedbackPublishError as exc:
+        item.status = "publish_failed"
+        item.failure_class = exc.failure_class
+        item.updated_at = utc_now()
+        db.commit()
+        raise HTTPException(status_code=503, detail=exc.detail) from exc
+    item.status = "published"
+    item.failure_class = ""
+    item.github_issue_number = int(receipt["number"])
+    item.github_url = str(receipt["url"])
+    item.updated_at = utc_now()
+    db.commit()
+    db.refresh(item)
+    return {**_feedback_response(item), "publish_receipt": {"repository": receipt["repository"], "number": receipt["number"], "url": receipt["url"]}}
 
 
 @app.get("/api/projects")

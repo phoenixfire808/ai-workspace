@@ -46,7 +46,12 @@ export default function CoderNode({ data }: NodeProps<WorkspaceNode>) {
           value={provider}
           onChange={(event) => {
             const nextProvider = event.target.value as ModelProvider;
-            onChange?.({ provider: nextProvider, model: MODEL_OPTIONS[nextProvider].model });
+            onChange?.({
+              provider: nextProvider,
+              model: MODEL_OPTIONS[nextProvider].model,
+              endpoint_profile: nextProvider === "openrouter" ? "openrouter" : "",
+              fallback_policy: "explicit_only",
+            });
           }}
         >
           {(Object.entries(MODEL_OPTIONS) as [ModelProvider, { label: string; model: string }][]).map(
@@ -102,7 +107,9 @@ export default function CoderNode({ data }: NodeProps<WorkspaceNode>) {
             ? "Explicit LFM2.5 agent option; requires its separate local runtime."
           : provider === "ollama"
             ? "Exact installed Ollama ID; the node never pulls or deletes models."
-          : "API keys stay outside the canvas and are never serialized."}
+          : provider === "openrouter"
+            ? "Explicit OpenRouter route; configure the local credential alias before enabling it."
+            : "API keys stay outside the canvas and are never serialized."}
       </div>
     </NodeFrame>
   );
