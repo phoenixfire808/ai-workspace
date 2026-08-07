@@ -1256,3 +1256,11 @@ Drew wants a canvas node that can take one larger request, decompose it into use
 - **Frontend verification:** `npm run typecheck` passed. Isolated `NEXT_DIST_DIR=.next-phase26 npm run build` compiled, linted/type-checked, and generated 4/4 static pages; generated Next config references were restored afterward.
 - **Repository verification:** `git diff --check` passed. Scan of 464 added source lines plus untracked files found **zero hardcoded credential candidates**. `.env.example` contains empty placeholders only and defaults feedback publishing to `disabled`.
 - **Acceptance boundary:** no OpenRouter/cloud request, key lookup value disclosure, public crawl, microphone/TTS action, model inference/load/unload, GPU repointing, worker dispatch, feedback publication, public bind, or external send occurred. Next step is rollback archive, loopback deployment, live JSON/Markdown/API lifecycle smoke, browser-visible UI inspection, then commit/push/PR update.
+
+### 26.9 Phase 26 commit, push, and PR publication — PASS (2026-08-07 04:40 CDT)
+
+- Committed the reviewed 19-file Phase 26 source/test/tracker manifest as `a72a8ffc93c583be92a6ae304b7968d085561467` with conventional subject `feat: add explicit model and capability controls` (**919 insertions, 25 deletions**; four new source/test files).
+- Pushed `feat/shared-nanbeige-agentic-workspace` to `origin`. Fetch/read-back verified local and remote at the same full feature SHA before this follow-up documentation receipt.
+- Reused the branch's existing authoritative pull request rather than creating a duplicate: **PR #1 — “feat: durable HITL workspace with explicit model controls”** at `https://github.com/phoenixfire808/ai-workspace/pull/1`.
+- PR read-back verified state `OPEN`, base `main`, the expected branch/head, and body markers for Phase 26, 17/17 tests, `explicit_only`, safety gates, review corrections, and the explicit unexercised acceptance boundary. No repository CI checks were configured/reported at read-back.
+- The worktree was clean and synchronized after the feature push and PR update. This append-only publication receipt is being preserved in a separate conventional documentation commit; no source behavior changed after the accepted feature commit.
