@@ -97,7 +97,7 @@ export default function ChatPanel() {
           message: trimmed,
           approved_tools: approved,
           max_loops: maxLoops,
-          active_hardware_lane: "shared-rtx-2070-super",
+          active_hardware_lane: "ollama-auto",
         }),
       });
       if (!response.ok || !response.body) throw new Error(`chat request failed (${response.status})`);

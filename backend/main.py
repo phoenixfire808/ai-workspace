@@ -739,7 +739,7 @@ async def chat_stream(payload: ChatStreamPayload) -> EventSourceResponse:
         yield {
             "id": f"{run_id}:0",
             "event": "run_started",
-            "data": json.dumps({"run_id": run_id, "model": DEFAULT_LFM_MODEL}),
+            "data": json.dumps({"run_id": run_id, "model": _lfm_model()}),
         }
         try:
             async for event in stream_lfm_events(state):
