@@ -1041,3 +1041,21 @@ Drew wants a canvas node that can take one larger request, decompose it into use
 - **Capability state:** durable approvals/run inspection, split/chunk/merge/context/plugin nodes, model endpoint/hardware profiles, governed file mutation, local SearXNG research tools, bounded Decompose/Delegate plan-only execution, and approval-gated app-owned Ollama lifecycle tools are implemented. Device/provider side effects remain unexercised unless explicitly approved/configured.
 - **Rollback:** `.hermes/backups/hitl-predeploy-20260807_030051.zip` preserves the source-only predeployment state; `.hermes/` remains ignored.
 - **Git/PR handoff:** 26 source/test/tracker files are staged on `feat/shared-nanbeige-agentic-workspace`; PR #1 is open but still carries the older 217-resource description. Parent publication is now the only active milestone: restore generated `next-env.d.ts`, commit, push, update the PR body with the verified 227-resource durable-runtime receipts, and verify the remote head.
+
+### 23.2 Parent live deployment receipt — 2026-08-07 03:13 CDT
+
+- **Accepted frontend listener:** PID `176704`, loopback `127.0.0.1:3000`, running `next start` from the freshly rebuilt production artifact. Host curl returned HTML `200` with Next static assets and the workspace marker.
+- **Accepted backend listener:** PID `176664`, loopback `127.0.0.0:8000`/`127.0.0.1:8000`, running from `backend/.venv` with `PYTHONPATH` cleared. `/api/health` returned `200` and reported the Nanbeige route ready.
+- **Frontend build:** `cmd.exe /d /s /c "npm run build"` passed after the prior `.next` artifact reported a missing `vendor-chunks/d3-selection.js` module. The broken generated directory was preserved as `frontend/.next-predeploy-20260807-0303`; a clean `.next` was rebuilt and accepted.
+- **Backend/API smoke:** `py_compile` and the focused import/graph/delegation/context/private-URL smoke passed in `backend/.venv`; `/api/projects`, `/api/library`, `/api/hardware/profiles`, and `/api/health` returned `200`.
+- **Browser receipt:** `http://127.0.0.1:3000/?build=unified-library` loaded with title `M⊕ AI Visual Workspace`; refreshed snapshot shows backend health `nanbeige · nanbeige4.2-3b-local`, populated Library, `Decompose / Delegate` palette entry, and web tools with the real disabled reason `search_backend_timeout` because local SearXNG did not answer preflight.
+- **Current status:** live for Drew’s review. No public bind, model inference, worker dispatch, audio capture, external send, commit, push, or PR mutation was performed by this parent deployment.
+- **Important:** the browser-driver’s first snapshot briefly showed `API disconnected` while the backend was being replaced; after refresh it showed the live health/library state. The host-side backend log recorded successful frontend API requests throughout final acceptance.
+
+### 23.2 GitHub publication completed — 2026-08-07 03:13 CDT
+
+- Committed the verified durable-runtime change set as `0088f54` (`feat: add durable HITL workflow runtime`): 26 files, 3,149 insertions, and 99 deletions.
+- Pushed `feat/shared-nanbeige-agentic-workspace`; fetched remote verification showed local and `origin/feat/shared-nanbeige-agentic-workspace` both at full SHA `0088f546098f1d8b49f2ceebe9073ca38f0ed7c2` with a clean tracked worktree.
+- Updated PR #1 to **“feat: add durable HITL visual workflow runtime”** at `https://github.com/phoenixfire808/ai-workspace/pull/1`. Read-back verified the durable-runtime summary, seven-test receipt, explicit deferred-acceptance section, open state, and matching head SHA.
+- Final live read-back after managed-runtime registration: frontend HTTP 200, backend health HTTP 200, capability audit HTTP 200 with **231 resources and zero invalid-ready entries**. The PR body was corrected from the earlier 227-resource pre-registration count to 231.
+- Publication is complete. Remaining tracker roadmaps involving microphone/TTS device acceptance, real model/cloud calls, actual worker dispatch/child completion, and Hermes mutation remain separate approval/configuration-gated work—not hidden failures in this accepted publication.
