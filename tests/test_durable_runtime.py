@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+import json
 import shutil
+import sys
 import tempfile
 import time
 import unittest
@@ -71,6 +73,9 @@ class DurableRuntimeAcceptance(unittest.TestCase):
         payload = audit.json()
         self.assertGreaterEqual(payload["total"], 1)
         self.assertEqual(payload["invalid_ready"], [])
+        hermes_audit = self.client.get("/api/hermes/capability-audit")
+        self.assertEqual(hermes_audit.status_code, 200, hermes_audit.text)
+        self.assertFalse(hermes_audit.json()["profile_mutation_supported"])
         plugins = self.client.get("/api/plugins")
         self.assertEqual(plugins.status_code, 200, plugins.text)
         self.assertEqual({item["plugin_id"] for item in plugins.json()["plugins"]}, {"run_annotation", "context_selector"})
@@ -167,7 +172,45 @@ class DurableRuntimeAcceptance(unittest.TestCase):
         self.assertIn('"status": "planned"', completed["final_output"])
         self.assertIn('"subtask_count": 2', completed["final_output"])
 
-    def test_07_all_file_actuators_stale_and_replay(self) -> None:
+    def test_07_delegate_child_receipt_and_completion(self) -> None:
+        worker_script = "import sys; sys.stdin.read(); print('worker complete')"
+        previous = os.environ.get("WORKSPACE_AGENT_COMMANDS")
+        os.environ["WORKSPACE_AGENT_COMMANDS"] = json.dumps({"acceptance-worker": [sys.executable, "-c", worker_script]})
+        try:
+            graph = self.graph(
+                [self.node("start-g", "start"), self.node("delegate-g", "delegate", {"decompose_strategy": "lines", "dispatch_mode": "sequential", "worker_target": "acceptance-worker", "max_subtasks": 2})],
+                [self.edge("edge-g1", "start-g", "delegate-g")],
+            )
+            created = self.start(graph, "Child acceptance assignment")
+            waiting = self.wait_run(created["id"], {"waiting_approval", "error"})
+            self.assertEqual(waiting["status"], "waiting_approval", waiting.get("error_detail"))
+            self.assertEqual(waiting["approvals"][-1]["action_type"], "delegate:delegate-g")
+            self.approve_pending(waiting)
+            completed = self.wait_run(created["id"], {"completed", "error"})
+            self.assertEqual(completed["status"], "completed", completed.get("error_detail"))
+
+            deadline = time.monotonic() + 8
+            while time.monotonic() < deadline:
+                completed = self.client.get(f"/api/runs/{created['id']}").json()
+                if completed.get("children") and completed["children"][0]["status"] in {"completed", "error"}:
+                    break
+                time.sleep(0.05)
+            self.assertEqual(len(completed["children"]), 1)
+            child = completed["children"][0]
+            self.assertEqual(child["child_run_id"], child["id"])
+            self.assertEqual(child["parent_run_id"], created["id"])
+            self.assertEqual(child["parent_step_id"], completed["steps"][-1]["id"])
+            self.assertEqual(child["status"], "completed")
+            self.assertEqual(child["output"].strip(), "worker complete")
+            self.assertEqual(len(child["receipt"]["context"]["context_sha256"]), 64)
+            self.assertEqual(child["receipt"]["completion"]["status"], "completed")
+        finally:
+            if previous is None:
+                os.environ.pop("WORKSPACE_AGENT_COMMANDS", None)
+            else:
+                os.environ["WORKSPACE_AGENT_COMMANDS"] = previous
+
+    def test_08_all_file_actuators_stale_and_replay(self) -> None:
         def preview(resource_id: str, arguments: dict) -> dict:
             response = self.client.post("/api/actions/preview", json={"resource_id": resource_id, "arguments": arguments})
             self.assertEqual(response.status_code, 200, response.text)

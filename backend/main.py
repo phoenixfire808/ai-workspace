@@ -11,7 +11,7 @@ from threading import Thread
 from typing import Any
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage
 from sse_starlette.sse import EventSourceResponse
@@ -34,6 +34,7 @@ from .graph import (
     configured_agents,
     run_graph,
     stream_graph,
+    transcribe_audio,
     validate_graph,
 )
 from .schema import ChatStreamPayload, ProjectPayload, RunChatPayload, RunDecisionPayload, RunPayload, ValidationPayload
@@ -78,11 +79,14 @@ from .library import (
     run_action,
 )
 from .tools import WORKSPACE_TOOL_CATALOG, WORKSPACE_TOOL_NAMES
+from .hermes_adapter import hermes_capability_audit
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE_ROOT = Path(os.getenv("WORKSPACE_ROOT", str(PROJECT_ROOT))).expanduser().resolve()
 WORKSPACE_ROOT.mkdir(parents=True, exist_ok=True)
+MAX_CAPTURE_BYTES = 50 * 1024 * 1024
+MAX_CAPTURE_DURATION_MS = 5 * 60 * 1000
 
 
 def _cors_origins() -> list[str]:
@@ -98,6 +102,43 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["Content-Type"],
 )
+
+
+@app.post("/api/audio/transcribe")
+async def transcribe_local_capture(request: Request, model_size: str = "small", consent: bool = False, duration_ms: int = 0) -> dict[str, Any]:
+    if not consent:
+        raise HTTPException(status_code=403, detail="explicit microphone capture consent is required")
+    if duration_ms < 0 or duration_ms > MAX_CAPTURE_DURATION_MS:
+        raise HTTPException(status_code=400, detail="capture duration exceeds the five-minute limit")
+    declared = int(request.headers.get("content-length") or 0)
+    if declared > MAX_CAPTURE_BYTES:
+        raise HTTPException(status_code=413, detail="captured audio exceeds the 50 MiB limit")
+    audio = await request.body()
+    if not audio or len(audio) > MAX_CAPTURE_BYTES:
+        raise HTTPException(status_code=400 if not audio else 413, detail="captured audio is empty or exceeds the size limit")
+    content_type = request.headers.get("content-type", "audio/webm").split(";", 1)[0].strip().lower()
+    suffix = {"audio/webm": ".webm", "audio/wav": ".wav", "audio/x-wav": ".wav", "audio/ogg": ".ogg", "audio/mpeg": ".mp3", "audio/mp4": ".m4a"}.get(content_type)
+    if suffix is None:
+        raise HTTPException(status_code=415, detail="captured audio content type is unsupported")
+    capture_id = uuid.uuid4().hex
+    relative = Path(".runtime") / "audio" / f"capture-{capture_id}{suffix}"
+    audio_path = (WORKSPACE_ROOT / relative).resolve()
+    transcript_path = audio_path.with_suffix(".txt")
+    audio_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        audio_path.write_bytes(audio)
+        transcript = transcribe_audio(relative.as_posix(), model_size, WORKSPACE_ROOT)
+        return {"transcript": transcript, "provenance": {"capture_id": capture_id, "source_kind": "explicit_microphone_capture", "provider": "buzz-whispercpp-local", "model_size": model_size, "duration_ms": duration_ms, "audio_bytes": len(audio), "temporary_audio_deleted": True}}
+    except Exception as exc:
+        failure_class = str(getattr(exc, "failure_class", type(exc).__name__.lower()))
+        detail = str(getattr(exc, "detail", exc))
+        raise HTTPException(status_code=503, detail=f"{failure_class}: {detail}") from exc
+    finally:
+        for artifact in (transcript_path, audio_path):
+            try:
+                artifact.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def _project_response(project: Project) -> dict[str, Any]:
@@ -194,6 +235,11 @@ def library(category: str | None = None, query: str | None = None, limit: int = 
 @app.get("/api/library/capability-audit")
 def library_capability_audit() -> dict[str, Any]:
     return capability_audit()
+
+
+@app.get("/api/hermes/capability-audit")
+def get_hermes_capability_audit() -> dict[str, Any]:
+    return hermes_capability_audit()
 
 
 @app.get("/api/plugins")

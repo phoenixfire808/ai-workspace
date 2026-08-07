@@ -114,6 +114,23 @@ class ApprovalRequest(Base):
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class DelegateChild(Base):
+    __tablename__ = "delegate_children"
+    id: Mapped[str] = mapped_column(String(96), primary_key=True)
+    parent_run_id: Mapped[str] = mapped_column(ForeignKey("workflow_runs.id"), index=True)
+    parent_step_id: Mapped[str] = mapped_column(ForeignKey("run_steps.id"), index=True)
+    subtask_id: Mapped[str] = mapped_column(String(96), index=True)
+    worker_target: Mapped[str] = mapped_column(String(160), default="")
+    assignment: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    process_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    receipt: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    output: Mapped[str] = mapped_column(Text, default="")
+    failure_class: Mapped[str] = mapped_column(String(120), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
 class ModelEndpointProfile(Base):
     __tablename__ = "model_endpoint_profiles"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)

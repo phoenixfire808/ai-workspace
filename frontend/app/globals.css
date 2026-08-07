@@ -98,6 +98,8 @@ button { color: inherit; }
 .palette-icon.node-task { color: #f49ab5; background: rgba(224, 74, 125, .14); }
 .palette-icon.node-agent { color: #9fd3ff; background: rgba(75, 143, 220, .14); }
 .palette-icon.node-delegate { color: #e4b1ff; background: rgba(178, 103, 224, .16); }
+.palette-icon.node-tts { color: #ffc477; background: rgba(224, 145, 57, .15); }
+.palette-icon.node-search, .palette-icon.node-research, .palette-icon.node-source-context { color: #69e0c1; background: rgba(40, 190, 156, .14); }
 .palette-text { min-width: 0; flex: 1; }
 .palette-text strong, .palette-text small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .palette-text strong { font-size: 11px; font-weight: 700; }
@@ -148,6 +150,8 @@ button { color: inherit; }
 .node-card.node-task { --node-accent: #eb78a1; }
 .node-card.node-agent { --node-accent: #70a8ed; }
 .node-card.node-delegate { --node-accent: #bf7be8; }
+.node-card.node-tts { --node-accent: #f4ae5d; }
+.node-card.node-search, .node-card.node-research, .node-card.node-source-context { --node-accent: #35cba3; }
 .node-card-header { display: flex; justify-content: space-between; padding: 12px 13px 8px; }
 .node-card-title { color: #f2f7ff; font-size: 12px; font-weight: 750; }
 .node-card-subtitle { margin-top: 4px; color: #8195b1; font-size: 9px; line-height: 1.35; }
@@ -265,6 +269,14 @@ button { color: inherit; }
 .node-merge { --node-accent: #a78bfa; }
 .node-context { --node-accent: #34d399; }
 .node-plugin { --node-accent: #fb7185; }
+.node-tts { --node-accent: #f4ae5d; }
+.node-search, .node-research, .node-source-context { --node-accent: #35cba3; }
+
+.web-provenance { display: grid; gap: 6px; margin: 8px 0; padding: 10px; border: 1px solid rgba(53, 203, 163, .3); border-radius: 8px; background: rgba(20, 93, 77, .12); }
+.provenance-summary { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; color: var(--text-muted); }
+.web-provenance a { display: grid; grid-template-columns: auto 1fr auto; gap: 6px; align-items: center; color: #8debd3; font-size: 11px; text-decoration: none; }
+.delegate-children { display: grid; gap: 6px; margin: 8px 0; padding: 10px; border: 1px solid rgba(191, 123, 232, .3); border-radius: 8px; background: rgba(85, 43, 112, .13); }
+.delegate-children summary { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; }
 .node-advanced { margin-top: 6px; border-top: 1px solid var(--line); padding-top: 6px; }
 .node-advanced summary, .schema-arguments summary, .run-inspector summary { cursor: pointer; color: var(--accent-cyan); font-size: 9px; font-weight: 700; }
 .schema-arguments { display: grid; gap: 6px; }

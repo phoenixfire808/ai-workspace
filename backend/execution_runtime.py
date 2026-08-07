@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import subprocess
 import threading
 import time
 import uuid
@@ -11,8 +12,9 @@ from typing import Any
 
 from sqlalchemy import delete, func, select
 
-from .database import ApprovalRequest, RunEvent, RunStep, SessionLocal, WorkflowRun, utc_now
-from .graph import ExecutionContext, NodeExecutionError, _execute_node, validate_graph
+from .database import ApprovalRequest, DelegateChild, RunEvent, RunStep, SessionLocal, WorkflowRun, utc_now
+from .graph import ExecutionContext, NodeExecutionError, _execute_node, take_agent_process, validate_graph
+from .hermes_adapter import take_dispatch_process
 from .schema import GraphDocument, GraphNode, RunPayload
 from .tools import APPROVAL_REQUIRED_TOOLS, WORKSPACE_TOOL_CATALOG, preview_workspace_mutation, preview_workspace_write
 from .plugins import PluginError, execute_plugin
@@ -21,6 +23,7 @@ MAX_CONTEXT_CHARS = 200_000
 MAX_DIFF_CHARS = 24_000
 MAX_CHUNKS = 256
 _MUTATION_TOOLS = {"create_workspace_file", "patch_workspace_file", "rename_workspace_file", "delete_workspace_file"}
+_WEB_NODE_TO_TOOL = {"search": "search_web", "research": "deep_research", "source_context": "build_research_context"}
 _workers: set[str] = set()
 _workers_lock = threading.Lock()
 
@@ -28,6 +31,25 @@ _workers_lock = threading.Lock()
 def _bounded(value: Any, limit: int = MAX_CONTEXT_CHARS) -> str:
     text = str(value or "")
     return text if len(text) <= limit else f"{text[:limit]}\n[truncated]"
+
+
+def _web_provenance(output: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(output)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    if not isinstance(payload, dict) or not any(key in payload for key in ("backend", "sources", "context_id", "source_id", "failure_class")):
+        return {}
+    sources: list[dict[str, Any]] = []
+    for item in payload.get("sources", [])[:24] if isinstance(payload.get("sources"), list) else []:
+        if not isinstance(item, dict):
+            continue
+        sources.append({key: item.get(key) for key in ("source_id", "title", "url", "domain", "rank", "extraction_status", "failure_class") if item.get(key) not in (None, "")})
+    return {
+        key: payload.get(key)
+        for key in ("status", "backend", "query", "query_count", "result_count", "selected_count", "domain_count", "context_id", "packet_sha256", "char_count", "truncated", "citations", "failure_class", "detail")
+        if payload.get(key) not in (None, "")
+    } | ({"sources": sources} if sources else {})
 
 
 def _stable_hash(value: Any) -> str:
@@ -72,6 +94,7 @@ def _step_payload(step: RunStep) -> dict[str, Any]:
         "input_context": step.input_context or {},
         "arguments": step.arguments or {},
         "output": step.output,
+        "provenance": _web_provenance(step.output),
         "failure_class": step.failure_class,
         "error_detail": step.error_detail,
         "duration_ms": step.duration_ms,
@@ -96,6 +119,82 @@ def _approval_payload(item: ApprovalRequest) -> dict[str, Any]:
     }
 
 
+def _child_payload(item: DelegateChild) -> dict[str, Any]:
+    return {"id": item.id, "child_run_id": item.id, "parent_run_id": item.parent_run_id, "subtask_id": item.subtask_id, "parent_step_id": item.parent_step_id, "worker_target": item.worker_target, "assignment": item.assignment, "status": item.status, "process_id": item.process_id, "receipt": item.receipt or {}, "output": item.output, "failure_class": item.failure_class, "created_at": item.created_at.isoformat() if item.created_at else None, "updated_at": item.updated_at.isoformat() if item.updated_at else None}
+
+
+def _monitor_delegate_child(child_id: str, process: Any) -> None:
+    started = time.perf_counter()
+    try:
+        stdout, _stderr = process.communicate(timeout=3600)
+        status = "completed" if process.returncode == 0 else "error"
+        output = _bounded(stdout, 200_000) if status == "completed" else ""
+        failure_class = "" if status == "completed" else "worker_exit_nonzero"
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.communicate()
+        status, output, failure_class = "error", "", "worker_timeout"
+    except Exception:
+        status, output, failure_class = "error", "", "worker_monitor_failed"
+    with SessionLocal() as child_db:
+        item = child_db.get(DelegateChild, child_id)
+        if item is None:
+            return
+        item.status = status
+        item.output = output
+        item.failure_class = failure_class
+        completion = {"status": status, "failure_class": failure_class, "duration_ms": round((time.perf_counter() - started) * 1000)}
+        item.receipt = {**(item.receipt if isinstance(item.receipt, dict) else {}), "completion": completion}
+        item.updated_at = utc_now()
+        parent = child_db.get(WorkflowRun, item.parent_run_id)
+        if parent is not None:
+            parent.updated_at = utc_now()
+        _emit(child_db, item.parent_run_id, "delegate_child_completed", {"run_id": item.parent_run_id, "parent_step_id": item.parent_step_id, "child_id": item.subtask_id, "child_run_id": item.id, "status": status, "failure_class": failure_class, "duration_ms": completion["duration_ms"]})
+        child_db.commit()
+
+
+def _persist_delegate_children(db: Any, run_id: str, step_id: str, output: str, context_receipt: dict[str, Any] | None = None) -> list[tuple[str, Any]]:
+    try:
+        payload = json.loads(output)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    children = payload.get("children") if isinstance(payload, dict) else None
+    if not isinstance(children, list):
+        return []
+    monitors: list[tuple[str, Any]] = []
+    for raw in children[:16]:
+        if not isinstance(raw, dict):
+            continue
+        subtask_id = str(raw.get("child_id") or uuid.uuid4().hex)[:96]
+        child_pk = f"{run_id}:{subtask_id}"[:96]
+        receipt = raw.get("receipt") if isinstance(raw.get("receipt"), dict) else {}
+        pid = receipt.get("pid") if isinstance(receipt.get("pid"), int) else None
+        item = db.get(DelegateChild, child_pk) or DelegateChild(id=child_pk, parent_run_id=run_id, parent_step_id=step_id, subtask_id=subtask_id)
+        db.add(item)
+        item.worker_target = str(raw.get("worker_target") or payload.get("worker_target") or "")[:160]
+        item.assignment = _bounded(raw.get("subtask"), 4000)
+        item.status = str(raw.get("status") or "planned")[:32]
+        item.process_id = pid
+        item.receipt = {
+            "child_run_id": child_pk,
+            "parent_run_id": run_id,
+            "parent_step_id": step_id,
+            "dispatch": receipt,
+            "context": context_receipt or {},
+        }
+        item.output = _bounded(raw.get("output"), 200_000)
+        item.failure_class = str(raw.get("failure_class") or "")[:120]
+        item.updated_at = utc_now()
+        _emit(db, run_id, "delegate_child_registered", {"run_id": run_id, "parent_step_id": step_id, "child_id": subtask_id, "child_run_id": child_pk, "status": item.status, "worker_target": item.worker_target, "process_id": pid, "context": context_receipt or {}})
+        if pid is not None:
+            process = take_agent_process(pid)
+            if process is None:
+                process = take_dispatch_process(pid)
+            if process is not None:
+                monitors.append((child_pk, process))
+    return monitors
+
+
 def get_run(run_id: str) -> dict[str, Any]:
     with SessionLocal() as db:
         run = db.get(WorkflowRun, run_id)
@@ -104,6 +203,7 @@ def get_run(run_id: str) -> dict[str, Any]:
         steps = list(db.scalars(select(RunStep).where(RunStep.run_id == run_id).order_by(RunStep.created_at, RunStep.id)).all())
         approvals = list(db.scalars(select(ApprovalRequest).where(ApprovalRequest.run_id == run_id).order_by(ApprovalRequest.created_at)).all())
         events = list(db.scalars(select(RunEvent).where(RunEvent.run_id == run_id).order_by(RunEvent.sequence)).all())
+        children = list(db.scalars(select(DelegateChild).where(DelegateChild.parent_run_id == run_id).order_by(DelegateChild.created_at, DelegateChild.id)).all())
         return {
             "id": run.id,
             "project_id": run.project_id,
@@ -121,6 +221,7 @@ def get_run(run_id: str) -> dict[str, Any]:
             "steps": [_step_payload(step) for step in steps],
             "approvals": [_approval_payload(item) for item in approvals],
             "events": [{"sequence": event.sequence, "event_type": event.event_type, "payload": event.payload, "created_at": event.created_at.isoformat() if event.created_at else None} for event in events],
+            "children": [_child_payload(item) for item in children],
         }
 
 
@@ -148,8 +249,12 @@ def delete_run(run_id: str) -> None:
             raise KeyError(run_id)
         if run.status in {"running", "committing"}:
             raise ValueError("a running workflow must be cancelled before deletion")
+        active_child = db.scalar(select(DelegateChild).where(DelegateChild.parent_run_id == run_id, DelegateChild.status.in_(["queued", "running"])).limit(1))
+        if active_child is not None:
+            raise ValueError("a run with active delegated children cannot be deleted")
         db.execute(delete(ApprovalRequest).where(ApprovalRequest.run_id == run_id))
         db.execute(delete(RunEvent).where(RunEvent.run_id == run_id))
+        db.execute(delete(DelegateChild).where(DelegateChild.parent_run_id == run_id))
         db.execute(delete(RunStep).where(RunStep.run_id == run_id))
         db.delete(run)
         db.commit()
@@ -237,6 +342,17 @@ def _protected_action(node: GraphNode, policy: str) -> str | None:
 
 
 def _normalized_node(node: GraphNode, value: str = "") -> tuple[GraphNode, str]:
+    if node.type in _WEB_NODE_TO_TOOL:
+        name = _WEB_NODE_TO_TOOL[node.type]
+        if node.type == "search":
+            arguments = {"query": str(node.data.get("query") or value), "categories": str(node.data.get("categories") or "general"), "time_range": str(node.data.get("time_range") or ""), "language": str(node.data.get("language") or "en"), "safe_search": int(node.data.get("safe_search") or 1), "max_results": int(node.data.get("max_results") or 10), "domains": list(node.data.get("domains") or [])}
+        elif node.type == "research":
+            raw_queries = node.data.get("queries") or []
+            queries = [item.strip() for item in raw_queries.splitlines() if item.strip()] if isinstance(raw_queries, str) else list(raw_queries)
+            arguments = {"query": str(node.data.get("query") or value), "queries": queries, "categories": str(node.data.get("categories") or "general"), "time_range": str(node.data.get("time_range") or ""), "language": str(node.data.get("language") or "en"), "safe_search": int(node.data.get("safe_search") or 1), "max_results_per_query": int(node.data.get("max_results_per_query") or 8), "max_pages": int(node.data.get("max_pages") or 12), "per_domain": int(node.data.get("per_domain") or 2), "extract_pages": node.data.get("extract_pages") is not False}
+        else:
+            arguments = {"sources": list(node.data.get("sources") or []), "context_text": str(node.data.get("context_text") or value), "max_chars": int(node.data.get("max_chars") or 30_000)}
+        return node.model_copy(update={"type": "tool", "data": {**node.data, "resource_id": f"tool:{name}", "arguments": arguments}}), ""
     if node.type == "file" and str(node.data.get("mode") or "read") != "read":
         mode = str(node.data.get("mode") or "write")
         if mode == "write":
@@ -267,7 +383,7 @@ def _normalized_node(node: GraphNode, value: str = "") -> tuple[GraphNode, str]:
     return node.model_copy(update={"data": {**node.data, "arguments": arguments}}), str(impact.get("diff", ""))[:MAX_DIFF_CHARS]
 
 
-def _execute_runtime_node(node: GraphNode, value: str, values: list[str], workspace_root: Path, project_id: str | None, approved: set[str], chat_value: str = "") -> list[str]:
+def _execute_runtime_node(node: GraphNode, value: str, values: list[str], workspace_root: Path, project_id: str | None, approved: set[str], chat_value: str = "", run_id: str = "", step_id: str = "") -> list[str]:
     if node.type == "split":
         return _split_value(value, node.data)
     if node.type == "merge":
@@ -296,7 +412,7 @@ def _execute_runtime_node(node: GraphNode, value: str, values: list[str], worksp
     if node.type == "chat":
         return [_bounded(chat_value or value)]
     state = {"messages": [value] if value else [], "project_tasks": {}, "input_text": value, "last_output": value, "values": {}}
-    context = ExecutionContext(workspace_root=workspace_root, events=[], project_id=project_id, approved_resources=approved)
+    context = ExecutionContext(workspace_root=workspace_root, events=[], project_id=project_id, approved_resources=approved, run_id=run_id, step_id=step_id)
     return [_bounded(_execute_node(node, state, context))]
 
 
@@ -400,12 +516,18 @@ def _run_worker(run_id: str, workspace_root: Path) -> None:
                     step.status = "running"
                     db.commit()
                     chat_value = str(state.get("chat_values", {}).get(subject, ""))
-                    outputs = _execute_runtime_node(normalized_node, value, list(item.get("values") or [value]), workspace_root, run.project_id, approved_resources | {action or "", str(normalized_node.data.get("resource_id") or ""), f"file-write:{node.id}"}, chat_value)
+                    outputs = _execute_runtime_node(normalized_node, value, list(item.get("values") or [value]), workspace_root, run.project_id, approved_resources | {action or "", str(normalized_node.data.get("resource_id") or ""), f"file-write:{node.id}"}, chat_value, run_id, step_id)
                     step.output = _bounded(outputs[0] if len(outputs) == 1 else json.dumps(outputs, ensure_ascii=False))
+                    context_receipt = {"context_sha256": _stable_hash(value), "context_chars": len(value), "context_source": str(item.get("source") or ""), "branch_key": step.branch_key}
+                    delegate_monitors = _persist_delegate_children(db, run_id, step_id, step.output, context_receipt) if node.type == "delegate" else []
                     step.status = "completed"
                     step.duration_ms = round((time.perf_counter() - started) * 1000)
                     step.updated_at = utc_now()
-                    _emit(db, run_id, "node_completed", {"run_id": run_id, "step_id": step_id, "node_id": node_id, "node_type": node.type, "branch_key": step.branch_key, "chunk_index": step.chunk_index, "status": "completed", "duration_ms": step.duration_ms, "output_preview": _bounded(step.output, 4000)})
+                    output_preview = "[transcript retained in local run context]" if node.type == "buzz" else _bounded(step.output, 4000)
+                    _emit(db, run_id, "node_completed", {"run_id": run_id, "step_id": step_id, "node_id": node_id, "node_type": node.type, "branch_key": step.branch_key, "chunk_index": step.chunk_index, "status": "completed", "duration_ms": step.duration_ms, "output_preview": output_preview})
+                    provenance = _web_provenance(step.output)
+                    if provenance:
+                        _emit(db, run_id, "web_provenance", {"run_id": run_id, "step_id": step_id, "node_id": node_id, **provenance})
 
                     for edge in outgoing[node_id]:
                         for output_index, output in enumerate(outputs):
@@ -421,6 +543,8 @@ def _run_worker(run_id: str, workspace_root: Path) -> None:
                     state["instance_index"] = instance_index
                     run.runtime_state = dict(state)
                     db.commit()
+                    for child_id, process in delegate_monitors:
+                        threading.Thread(target=_monitor_delegate_child, args=(child_id, process), name=f"delegate-child-{child_id[-8:]}", daemon=True).start()
 
                 state["node_index"] = int(state["node_index"]) + 1
                 state["instance_index"] = 0
@@ -506,3 +630,19 @@ def cancel_run(run_id: str) -> dict[str, Any]:
         _emit(db, run_id, "run_cancelled", {"run_id": run_id})
         db.commit()
     return get_run(run_id)
+
+
+def reconcile_detached_children() -> int:
+    """Fail closed for child monitors that cannot survive a backend restart."""
+    with SessionLocal() as db:
+        children = list(db.scalars(select(DelegateChild).where(DelegateChild.status.in_(["queued", "running"]))).all())
+        for item in children:
+            item.status = "detached"
+            item.failure_class = "worker_monitor_detached_after_restart"
+            item.updated_at = utc_now()
+            _emit(db, item.parent_run_id, "delegate_child_detached", {"run_id": item.parent_run_id, "parent_step_id": item.parent_step_id, "child_id": item.subtask_id, "status": "detached", "failure_class": item.failure_class})
+        db.commit()
+        return len(children)
+
+
+reconcile_detached_children()

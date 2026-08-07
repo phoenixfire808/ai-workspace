@@ -39,6 +39,7 @@ Thumbs.db
 *.log
 *.tmp
 output/
+.runtime/
 
 # Agent/session artifacts
 .hermes/

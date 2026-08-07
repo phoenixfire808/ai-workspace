@@ -23,6 +23,7 @@ import ChatPanel from "./ChatPanel";
 import ControlCenterPanel from "./ControlCenterPanel";
 import LibraryPanel from "./LibraryPanel";
 import BuzzNode from "./nodes/BuzzNode";
+import TtsNode from "./nodes/TtsNode";
 import CoderNode from "./nodes/CoderNode";
 import FileNode from "./nodes/FileNode";
 import PlannerNode from "./nodes/PlannerNode";
@@ -31,6 +32,7 @@ import TaskNode from "./nodes/TaskNode";
 import ToolNode from "./nodes/ToolNode";
 import RuntimeNode from "./nodes/RuntimeNode";
 import DecomposeNode from "./nodes/DecomposeNode";
+import { ResearchNode, SearchNode, SourceContextNode } from "./nodes/WebResearchNodes";
 import RunInspector from "./RunInspector";
 import { ChatInputNode, ContextNode, MergeNode, PluginNode, ReviewNode, SplitNode } from "./nodes/WorkflowControlNodes";
 import { NODE_META, nodeDefaults, persistedData, type NodeKind, type WorkspaceNodeData } from "./nodes/types";
@@ -116,6 +118,7 @@ const initialEdges: Edge[] = [
 const nodeTypes = {
   start: StartNode,
   buzz: BuzzNode,
+  tts: TtsNode,
   planner: PlannerNode,
   coder: CoderNode,
   file: FileNode,
@@ -130,6 +133,9 @@ const nodeTypes = {
   context: ContextNode,
   plugin: PluginNode,
   delegate: DecomposeNode,
+  search: SearchNode,
+  research: ResearchNode,
+  source_context: SourceContextNode,
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {

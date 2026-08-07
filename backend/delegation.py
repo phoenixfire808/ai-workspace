@@ -100,9 +100,22 @@ def dispatch_subtasks(
         try:
             if target.startswith("hermes:"):
                 receipt = dispatch_hermes(target.removeprefix("hermes:"), prompt)  # type: ignore[misc]
+                if isinstance(receipt, dict):
+                    normalized_receipt = receipt
+                else:
+                    try:
+                        parsed_receipt = json.loads(str(receipt))
+                    except (TypeError, json.JSONDecodeError):
+                        parsed_receipt = None
+                    normalized_receipt = parsed_receipt if isinstance(parsed_receipt, dict) else {"value": str(receipt)[:2_000]}
+                status = str(normalized_receipt.get("status") or "completed").lower()
+                if status not in {"queued", "running", "completed", "error"}:
+                    status = "completed"
+                return {"child_id": child_id, "subtask": task, "worker_target": target, "status": status, "receipt": normalized_receipt, "output": str(normalized_receipt.get("output") or "")[:2_000], "failure_class": str(normalized_receipt.get("failure_class") or "")[:120]}
             else:
                 receipt = dispatch_agent(target, prompt)
-            return {"child_id": child_id, "subtask": task, "worker_target": target, "status": "queued", "receipt": str(receipt)[:2_000]}
+            normalized_receipt = receipt if isinstance(receipt, dict) else {"value": str(receipt)[:2_000]}
+            return {"child_id": child_id, "subtask": task, "worker_target": target, "status": "queued", "receipt": normalized_receipt}
         except Exception as exc:  # Keep one worker failure visible without hiding sibling receipts.
             return {"child_id": child_id, "subtask": task, "worker_target": target, "status": "error", "failure_class": type(exc).__name__.lower()}
 

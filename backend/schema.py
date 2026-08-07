@@ -7,7 +7,7 @@ from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, ConfigDict, Field
 
 
-NodeType = Literal["start", "buzz", "planner", "coder", "file", "task", "agent", "tool", "runtime", "review", "chat", "split", "merge", "context", "plugin", "delegate"]
+NodeType = Literal["start", "buzz", "tts", "planner", "coder", "file", "task", "agent", "tool", "runtime", "review", "chat", "split", "merge", "context", "plugin", "delegate", "search", "research", "source_context"]
 ApprovalPolicy = Literal["preflight", "per_action", "step_through"]
 BranchMode = Literal["parallel", "sequential", "conditional", "chunked"]
 NODE_ID_PATTERN = r"^[A-Za-z][A-Za-z0-9_-]{0,119}$"

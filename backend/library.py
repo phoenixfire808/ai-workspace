@@ -12,7 +12,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from .graph import configured_agents, trigger_agent, _model_output
-from .hermes_adapter import list_hermes_skills
+from .hermes_adapter import hermes_capability_audit, list_hermes_skills
 from .ollama_control import list_ollama_models, preflight_ollama_model
 from .runtime_control import list_runtime_profiles, preflight_runtime_profile
 from .schema import GraphDocument
@@ -211,9 +211,14 @@ def _static_model_readiness(provider: str) -> tuple[bool, str | None]:
 def library_resources() -> list[LibraryResource]:
     resources: list[LibraryResource] = []
     web_status = web_preflight()
+    hermes_status = hermes_capability_audit()
+    hermes_capabilities = {str(item.get("capability")): item for item in hermes_status.get("capabilities", []) if isinstance(item, dict)}
     for item in WORKSPACE_TOOL_CATALOG:
         name = str(item["name"])
         web_unavailable = name in {"search_web", "deep_research"} and not web_status.get("ready")
+        hermes_key = {"list_hermes_skills": "inventory", "read_hermes_skill": "read_skill", "dispatch_hermes_skill": "dispatch_skill"}.get(name)
+        hermes_item = hermes_capabilities.get(hermes_key or "", {})
+        hermes_unavailable = bool(hermes_key) and not bool(hermes_item.get("ready"))
         resources.append(
             LibraryResource(
                 resource_id=f"tool:{name}",
@@ -221,8 +226,8 @@ def library_resources() -> list[LibraryResource]:
                 label=name.replace("_", " ").title(),
                 description=str(item.get("description", "")),
                 scope=str(item.get("scope", "workspace")),
-                ready=not web_unavailable,
-                disabled_reason=str(web_status.get("failure_class") or "search backend unavailable") if web_unavailable else None,
+                ready=not web_unavailable and not hermes_unavailable,
+                disabled_reason=(str(web_status.get("failure_class") or "search backend unavailable") if web_unavailable else str(hermes_item.get("disabled_reason")) if hermes_unavailable else None),
                 requires_approval=bool(item.get("requires_approval")),
                 capabilities=["add_to_canvas", "run_now"],
                 arguments_schema=_tool_schema(name),
@@ -368,8 +373,17 @@ def capability_audit() -> dict[str, Any]:
             handler, primary_action, executable = "preflight_runtime_profile", "preflight", resource.ready
         elif resource.category == "template":
             handler, primary_action, executable = "instantiate_template", "instantiate", resource.ready
-        rows.append({"resource_id": resource.resource_id, "category": resource.category, "ready": resource.ready, "executable": executable, "primary_action": primary_action, "handler": handler, "schema_present": schema_present, "requires_approval": resource.requires_approval, "disabled_reason": resource.disabled_reason or ("handler or argument schema is unavailable" if resource.ready and not executable else "")})
-    return {"resources": rows, "total": len(rows), "ready": sum(1 for row in rows if row["ready"]), "executable": sum(1 for row in rows if row["executable"]), "invalid_ready": [row for row in rows if row["ready"] and not row["executable"]]}
+        if not resource.ready:
+            status = "DISABLED"
+        elif not executable:
+            status = "FAIL"
+        elif resource.requires_approval:
+            status = "BLOCKED"
+        else:
+            status = "PASS"
+        rows.append({"resource_id": resource.resource_id, "category": resource.category, "status": status, "ready": resource.ready, "executable": executable, "primary_action": primary_action, "handler": handler, "schema_present": schema_present, "requires_approval": resource.requires_approval, "gate": "approval_required" if resource.requires_approval else "none", "failure_class": resource.disabled_reason or ("handler_or_argument_schema_unavailable" if resource.ready and not executable else ""), "disabled_reason": resource.disabled_reason or ("handler or argument schema is unavailable" if resource.ready and not executable else "")})
+    status_counts = {status: sum(1 for row in rows if row["status"] == status) for status in ("PASS", "BLOCKED", "DISABLED", "FAIL")}
+    return {"matrix_version": "2026-08-07.v1", "resources": rows, "total": len(rows), "ready": sum(1 for row in rows if row["ready"]), "executable": sum(1 for row in rows if row["executable"]), "status_counts": status_counts, "invalid_ready": [row for row in rows if row["status"] == "FAIL"]}
 
 
 def get_resource(resource_id: str) -> LibraryResource:

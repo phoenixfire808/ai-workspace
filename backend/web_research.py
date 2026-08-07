@@ -388,20 +388,26 @@ def build_research_context(sources: list[dict[str, Any]] | None = None, context_
     """Build a bounded citation-preserving context packet from selected research sources."""
     limit = min(max(int(max_chars), 2_000), MAX_CONTEXT_CHARS)
     records = sources or []
-    if not records and context_text.strip():
+    user_context = context_text.strip()
+    if not records and user_context:
         try:
-            parsed = json.loads(context_text)
+            parsed = json.loads(user_context)
         except (TypeError, ValueError):
             parsed = None
         if isinstance(parsed, dict) and isinstance(parsed.get("sources"), list):
             records = [item for item in parsed["sources"] if isinstance(item, dict)]
+            user_context = ""
     sections: list[str] = []
     citations: list[dict[str, str]] = []
     for index, source in enumerate(records, start=1):
         if not isinstance(source, dict):
             continue
-        url = str(source.get("final_url") or source.get("url") or "").strip()
-        if not url:
+        raw_url = str(source.get("final_url") or source.get("url") or "").strip()
+        if not raw_url:
+            continue
+        try:
+            url = _public_url(raw_url)
+        except WebResearchError:
             continue
         source_id = str(source.get("source_id") or f"S{index}")[:80]
         title = str(source.get("title") or source.get("domain") or "Untitled source")[:500]
@@ -410,13 +416,13 @@ def build_research_context(sources: list[dict[str, Any]] | None = None, context_
             continue
         citations.append({"source_id": source_id, "title": title, "url": url})
         sections.append(f"[{source_id}] {title}\nURL: {url}\nEvidence excerpt:\n{excerpt[:MAX_EXCERPT_CHARS]}")
-    if context_text.strip():
-        sections.insert(0, f"[USER-CONTEXT]\n{context_text.strip()[:MAX_EXCERPT_CHARS]}")
+    if user_context:
+        sections.insert(0, f"[USER-CONTEXT]\n{user_context[:MAX_EXCERPT_CHARS]}")
     packet = "\n\n---\n\n".join(sections)
     truncated = len(packet) > limit
     packet = packet[:limit]
     packet_hash = hashlib.sha256(packet.encode("utf-8")).hexdigest()
-    return _json_result({"status": "completed", "context_id": f"ctx-{packet_hash[:12]}", "packet_sha256": packet_hash, "char_count": len(packet), "truncated": truncated, "sources": citations, "citations": [item["source_id"] for item in citations], "context": packet, "provenance": "local-searxng-selected-public-pages"})
+    return _json_result({"status": "completed", "context_id": f"ctx-{packet_hash[:12]}", "packet_sha256": packet_hash, "char_count": len(packet), "truncated": truncated, "requested_count": len(records), "selected_count": len(citations), "dropped_count": max(len(records) - len(citations), 0), "sources": citations, "citations": [item["source_id"] for item in citations], "context": packet, "provenance": "local-searxng-selected-public-pages"})
 
 
 WEB_TOOLS = [search_web, extract_web_page, deep_research, build_research_context]

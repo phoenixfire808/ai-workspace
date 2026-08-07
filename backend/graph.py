@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -25,10 +26,12 @@ from .schema import GraphDocument, GraphNode
 from .tools import WORKSPACE_TOOL_CATALOG, WORKSPACE_TOOLS
 
 
-SUPPORTED_NODE_TYPES = {"start", "buzz", "planner", "coder", "file", "task", "agent", "tool", "runtime", "review", "chat", "split", "merge", "context", "plugin", "delegate"}
+SUPPORTED_NODE_TYPES = {"start", "buzz", "tts", "planner", "coder", "file", "task", "agent", "tool", "runtime", "review", "chat", "split", "merge", "context", "plugin", "delegate", "search", "research", "source_context"}
 ALLOWED_AUDIO_SUFFIXES = {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".aac", ".webm"}
 ALLOWED_BUZZ_MODEL_SIZES = {"tiny", "base", "small", "medium", "large", "large-v2", "large-v3"}
 MAX_FILE_CHARS = 200_000
+_AGENT_PROCESSES: dict[int, subprocess.Popen[str]] = {}
+_AGENT_PROCESSES_LOCK = threading.Lock()
 DEFAULT_MINIMAX_MODEL = "MiniMax-M3"
 DEFAULT_NANBEIGE_MODEL = "nanbeige4.2-3b-local"
 DEFAULT_NANBEIGE_BASE_URL = "http://127.0.0.1:8080/v1"
@@ -66,6 +69,8 @@ class ExecutionContext:
     events: list[dict[str, Any]]
     project_id: str | None = None
     approved_resources: set[str] = field(default_factory=set)
+    run_id: str = ""
+    step_id: str = ""
 
 
 def _node_dict(node: GraphNode) -> dict[str, Any]:
@@ -560,7 +565,12 @@ def configured_agents() -> list[str]:
     return sorted(_configured_agent_commands())
 
 
-def trigger_agent(target: str, prompt: str, root: Path) -> int:
+def take_agent_process(process_id: int) -> subprocess.Popen[str] | None:
+    with _AGENT_PROCESSES_LOCK:
+        return _AGENT_PROCESSES.pop(process_id, None)
+
+
+def trigger_agent(target: str, prompt: str, root: Path) -> dict[str, Any]:
     commands = _configured_agent_commands()
     command = commands.get(target)
     if not command:
@@ -570,15 +580,18 @@ def trigger_agent(target: str, prompt: str, root: Path) -> int:
             command,
             cwd=str(root),
             stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         if process.stdin is not None:
             process.stdin.write(prompt[:MAX_FILE_CHARS])
             process.stdin.close()
-        return int(process.pid)
+            process.stdin = None
+        with _AGENT_PROCESSES_LOCK:
+            _AGENT_PROCESSES[int(process.pid)] = process
+        return {"pid": int(process.pid), "capture": "bounded_stdout", "status": "started"}
     except (OSError, ValueError) as exc:
         raise NodeExecutionError("the configured local agent could not be started", "agent_start_failed") from exc
 
@@ -596,7 +609,7 @@ def _delegate_node(node: GraphNode, state: AgentState, context: ExecutionContext
             max_subtasks=int(data.get("max_subtasks", 8)),
             worker_target=str(data.get("worker_target") or data.get("target") or ""),
             mode=mode,
-            context=_current_input(state),
+            context=f"PARENT_RUN_ID: {context.run_id or 'legacy'}\nPARENT_STEP_ID: {context.step_id or node.id}\n\n{_current_input(state)}",
             max_parallel=int(data.get("max_parallel", 4)),
             dispatch_agent=lambda target, prompt: trigger_agent(target, prompt, context.workspace_root),
             dispatch_hermes=lambda skill, prompt: dispatch_hermes_skill.invoke({"skill_name": skill, "prompt": prompt}),
@@ -669,8 +682,12 @@ def _execute_node(node: GraphNode, state: AgentState, context: ExecutionContext)
     if node.type == "start":
         return state.get("input_text", "")
     if node.type == "buzz":
+        if str(data.get("input_mode") or "") == "captured_transcript" and str(data.get("transcript") or "").strip():
+            return str(data.get("transcript"))[:MAX_FILE_CHARS]
         file_path = str(data.get("file_path") or state.get("input_text", ""))
         return transcribe_audio(file_path, str(data.get("model_size") or "small"), context.workspace_root)
+    if node.type == "tts":
+        return str(data.get("text") or _current_input(state))[:MAX_FILE_CHARS]
     if node.type == "planner":
         return _planner_output(_current_input(state), data)
     if node.type == "coder":

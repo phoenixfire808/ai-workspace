@@ -1,6 +1,6 @@
 import type { Node } from "@xyflow/react";
 
-export type NodeKind = "start" | "buzz" | "planner" | "coder" | "file" | "task" | "agent" | "tool" | "runtime" | "review" | "chat" | "split" | "merge" | "context" | "plugin" | "delegate";
+export type NodeKind = "start" | "buzz" | "tts" | "planner" | "coder" | "file" | "task" | "agent" | "tool" | "runtime" | "review" | "chat" | "split" | "merge" | "context" | "plugin" | "delegate" | "search" | "research" | "source_context";
 export type ModelProvider = "nanbeige" | "lfm" | "minimax" | "ollama";
 
 export interface WorkspaceNodeData extends Record<string, unknown> {
@@ -26,6 +26,7 @@ export const MODEL_OPTIONS: Record<ModelProvider, { label: string; model: string
 export const NODE_META: Record<NodeKind, { label: string; icon: string; accent: string; hint: string }> = {
   start: { label: "Start", icon: "◉", accent: "node-start", hint: "Workflow input" },
   buzz: { label: "Buzz transcription", icon: "◌", accent: "node-buzz", hint: "Whisper audio" },
+  tts: { label: "Local TTS", icon: "◖", accent: "node-tts", hint: "Manual local playback" },
   planner: { label: "Planner", icon: "✦", accent: "node-planner", hint: "Intent to plan" },
   coder: { label: "Coder model", icon: "⌘", accent: "node-coder", hint: "Ollama installed / local alternatives" },
   file: { label: "File I/O", icon: "▣", accent: "node-file", hint: "Workspace files" },
@@ -40,6 +41,9 @@ export const NODE_META: Record<NodeKind, { label: string; icon: string; accent: 
   context: { label: "Context", icon: "{}", accent: "node-context", hint: "Select inherited data" },
   plugin: { label: "Plugin", icon: "⬡", accent: "node-plugin", hint: "Registered extension" },
   delegate: { label: "Decompose / Delegate", icon: "⇶", accent: "node-delegate", hint: "Bounded worker assignment" },
+  search: { label: "Search web", icon: "⌕", accent: "node-search", hint: "Local SearXNG discovery" },
+  research: { label: "Deep research", icon: "◎", accent: "node-research", hint: "Bounded source extraction" },
+  source_context: { label: "Source context", icon: "§", accent: "node-source-context", hint: "Cited evidence packet" },
 };
 
 export function persistedData(data: WorkspaceNodeData): Record<string, unknown> {
@@ -52,7 +56,9 @@ export function nodeDefaults(kind: NodeKind): WorkspaceNodeData {
     case "start":
       return { label: "Start", description: "Accepts the run input." };
     case "buzz":
-      return { label: "Buzz transcription", description: "Transcribe a local audio file.", file_path: "", model_size: "small" };
+      return { label: "Buzz transcription", description: "Transcribe explicit microphone capture or a local audio file.", file_path: "", model_size: "small", capture_consent: false, input_mode: "workspace_file", transcript: "", transcript_provenance: {} };
+    case "tts":
+      return { label: "Local TTS", description: "Speak text only through an explicitly selected local browser voice.", text: "", voice_uri: "", rate: 1, pitch: 1 };
     case "planner":
       return {
         label: "Planner",
@@ -97,5 +103,11 @@ export function nodeDefaults(kind: NodeKind): WorkspaceNodeData {
       return { label: "Plugin", description: "Run a registered local extension.", plugin_id: "run_annotation", note: "" };
     case "delegate":
       return { label: "Decompose / Delegate", description: "Split work and assign approved workers.", decompose_strategy: "checklist", dispatch_mode: "plan_only", worker_target: "", max_subtasks: 8, max_parallel: 4, subtasks: "" };
+    case "search":
+      return { label: "Search web", description: "Search through local loopback SearXNG.", query: "", categories: "general", language: "en", safe_search: 1, max_results: 10, domains: [] };
+    case "research":
+      return { label: "Deep research", description: "Run bounded multi-query research and selected-page extraction.", query: "", queries: "", categories: "general", language: "en", safe_search: 1, max_results_per_query: 8, max_pages: 12, per_domain: 2, extract_pages: true };
+    case "source_context":
+      return { label: "Source context", description: "Build a citation-preserving context packet.", context_text: "", max_chars: 30000 };
   }
 }

@@ -1059,3 +1059,151 @@ Drew wants a canvas node that can take one larger request, decompose it into use
 - Updated PR #1 to **“feat: add durable HITL visual workflow runtime”** at `https://github.com/phoenixfire808/ai-workspace/pull/1`. Read-back verified the durable-runtime summary, seven-test receipt, explicit deferred-acceptance section, open state, and matching head SHA.
 - Final live read-back after managed-runtime registration: frontend HTTP 200, backend health HTTP 200, capability audit HTTP 200 with **231 resources and zero invalid-ready entries**. The PR body was corrected from the earlier 227-resource pre-registration count to 231.
 - Publication is complete. Remaining tracker roadmaps involving microphone/TTS device acceptance, real model/cloud calls, actual worker dispatch/child completion, and Hermes mutation remain separate approval/configuration-gated work—not hidden failures in this accepted publication.
+
+### 23.4 Duplicate backend launcher clarification — 2026-08-07 03:15 CDT
+
+- `proc_601ed209e4c3` exited with code 3 because it attempted to bind `127.0.0.1:8000` while the accepted backend listener was already serving on that port.
+- This is an expected duplicate-launch collision, not a backend outage: `/api/health` returned HTTP 200 and listener PID `176664` remains active.
+- The healthy backend and frontend were left untouched; no restart, kill, commit, push, or external action was performed for this clarification.
+
+### 23.5 Duplicate frontend launcher clarification — 2026-08-07 03:16 CDT
+
+- `proc_ccd687343650` exited with code 1 because it attempted to bind `127.0.0.1:3000` while the accepted Next production listener was already serving on that port.
+- This is an expected duplicate-launch collision, not a frontend outage: the live page returned HTTP 200 with Next assets and the workspace marker; listener PID `176704` remains active.
+- The healthy frontend and backend were left untouched; no restart, kill, commit, push, or external action was performed for this clarification.
+
+### 23.6 Repeated stale frontend launcher notification — 2026-08-07 03:17 CDT
+
+- `proc_00942844fba2` exited with code 1 after another attempt to bind the already-active `127.0.0.1:3000` listener.
+- The accepted frontend remains healthy: HTTP 200, workspace HTML present, listener PID `176704`, accepted process `proc_f69ce0bf1709` still running.
+- No restart or cleanup was performed; this is recorded as a stale duplicate notification.
+
+## 24. Post-publication complete-functionality continuation — ACTIVE (2026-08-07 03:25 CDT)
+
+### 24.1 Direction and ownership
+
+- **User direction:** continue implementing everything recorded in the canonical tracker and keep this Markdown file current during work.
+- **Authoritative branch/base:** `feat/shared-nanbeige-agentic-workspace` at published head `ebcbefecb7bc6654c6fa6d268d6385a616b75625` when this phase began; PR #1 remains the publication target.
+- **Parent ownership:** primary session owns integration. No new worker is authorized or assigned by this entry. Existing live loopback listeners on ports 3000/8000 remain untouched until a later consolidated acceptance/deployment gate.
+- **Safety boundary:** source implementation and synthetic/read-only checks may proceed. Microphone capture, TTS playback, public-page retrieval, model loading/inference, actual product-worker dispatch, Hermes dispatch/profile mutation, and external sends remain explicit approval/configuration-gated actions.
+
+### 24.2 Reconciled remaining scope
+
+1. **Web UI/provenance — IN PROGRESS:** backend SearXNG search, extraction, deep-research, and context-packet tools exist and are governed. Remaining work is dedicated Search/Research/Source Context nodes, persisted source/query/context metadata, and Run Inspector evidence/citation views. Historical Section 21.5 “not implemented” text is superseded only for the backend adapters—not for these remaining UI/receipt contracts.
+2. **Voice lane — PENDING:** implement explicit Buzz Record/Stop consent states and transcript provenance handoff, then local TTS Speak/Stop/Replay provider/readiness contracts. Construction must not open a device or play audio implicitly.
+3. **Delegate continuity — PENDING:** the node/schema and bounded plan-only adapter exist. Remaining work is durable parent/child run identity, completion/error collection, child context receipts, and expandable Run Inspector lineage. Actual dispatch remains separately reviewed.
+4. **Hermes lane — PENDING:** existing skill inventory/read/dispatch adapters must gain an exportable truth audit plus durable bounded context/session receipts. Fresh-process execution will be run only against an explicitly configured safe adapter/profile boundary.
+5. **Final audit — PENDING:** export the Section 19.7 matrix and run one consolidated compile/type/build/API lifecycle batch. Device/provider paths must end as PASS or an exact BLOCKED/DISABLED reason—never assumed green.
+
+### 24.3 Current active slice
+
+- Implement web-specific canvas nodes by composing the existing governed tool schemas rather than adding duplicate network clients.
+- Extend durable run events/steps with bounded web provenance metadata and render queries, source IDs/URLs, extraction failures, context hashes/sizes, and citations in Run Inspector.
+- Add focused tests for unavailable local SearXNG, private/loopback URL rejection, context-packet provenance, and graph serialization. Do not perform a public crawl during this slice.
+- Update this section immediately when priorities, ownership, blockers, verification receipts, or deployed behavior change.
+
+### 24.4 Web UI/provenance implementation progress — 2026-08-07 03:25 CDT
+
+- Added dedicated `search`, `research`, and `source_context` graph/node types and `frontend/components/nodes/WebResearchNodes.tsx`; Canvas registration and palette metadata/defaults now expose them as first-class workflow nodes.
+- The durable runtime normalizes these nodes into the existing `search_web`, `deep_research`, and `build_research_context` tools. Approval requirements therefore remain backend-owned and cannot be bypassed by the dedicated UI.
+- Persisted web outputs now derive bounded provenance records containing backend/status, query/result/domain counts, source IDs/titles/URLs/ranks, extraction/failure classes, packet ID/hash/size/truncation, and citations. A metadata-only `web_provenance` event is emitted, while full bounded output remains stored once in the step.
+- Run Inspector now renders a web-provenance section with selected citation links, extraction outcomes, packet hash, size, and explicit failure reason.
+- Corrected inherited research-context handling so an incoming JSON source envelope is parsed into records without also being duplicated as a large `[USER-CONTEXT]` block.
+- **Verification status:** implementation only; per Drew's batch-testing preference, compile/type/build and focused web failure/provenance tests remain deferred to the consolidated acceptance phase after the voice, Delegate, and Hermes slices. Live services have not been restarted and public retrieval/model synthesis has not run.
+
+### 24.5 Voice implementation progress — 2026-08-07 03:25 CDT
+
+- `BuzzNode` now exposes explicit microphone-consent, Record, Stop, and Cancel controls with visible `idle → requesting_consent → preparing_device → recording → transcribing → stopped/error` states. Duplicate starts are disabled, in-flight transcription is abortable, and recordings auto-stop at five minutes.
+- Added loopback-only `POST /api/audio/transcribe`: consent is mandatory; payloads are capped at 50 MiB and five minutes; MIME/model values are bounded; random temporary artifacts live under ignored `.runtime/audio`; audio and Buzz transcript files are deleted in `finally` after the response is assembled.
+- Successful capture stores transcript text as selected local workflow context plus provenance (`capture_id`, local provider/model, duration, byte count, source kind, deletion receipt). Durable `node_completed` events redact the transcript preview rather than copying speech text into event logs.
+- The Buzz execution seam accepts the explicitly captured transcript as real node output, preserving its node/run source, while the existing workspace-file path remains available and guarded.
+- Added a first-class `tts` node with manual Speak/Stop/Replay controls. It lists only browser voices marked `localService`, requires a direct user click, exposes playback state, and never silently selects an online voice or implies call/broadcast injection. During workflow execution it passes prepared text through; playback remains an explicit local UI action.
+- **Verification boundary:** no microphone permission request, device open, audio recording, Buzz model load/inference, browser speech playback, or external audio send was performed during construction. Synthetic consent/size/MIME/cleanup and TypeScript/Python checks remain in the final batch; real device/playback proof requires explicit user acceptance.
+
+### 24.6 Delegate continuity implementation progress — 2026-08-07 03:25 CDT
+
+- Added additive SQLite `delegate_children` records keyed to exact `parent_run_id`, `parent_step_id`, and `subtask_id`, with bounded assignment, approved worker target, PID, structured receipt, status, output, failure class, and timestamps.
+- Plan-only decompositions now persist child records rather than existing only inside one opaque node-output string. Synchronous Hermes child receipts are marked completed; app-launched local-agent children are registered as queued and monitored through the owning process handle.
+- App-launched workers now use bounded captured stdout/stderr pipes instead of discarding all process output. A daemon monitor records completed/error/timeout status and bounded stdout, emits metadata-only `delegate_child_completed`, and never stores stderr text.
+- Each worker context includes the exact parent run/step identity. Run deletion is rejected while delegated children are active. On backend restart, unresolved queued/running monitors become explicit `detached / worker_monitor_detached_after_restart` records rather than remaining falsely queued.
+- Run API responses include child records, and Run Inspector renders an expandable tree under the parent Delegate step with assignment, worker target/PID, structured receipt, result, status, and failure class.
+- **Known boundary:** this slice makes assignment and completion durable/visible; it does not yet block downstream graph nodes until asynchronous children finish or automatically merge child outputs back into downstream context. Actual dispatch and child-result semantics remain subject to the configured adapter and approval gate; no worker was launched during construction.
+- **Verification status:** source implementation only; plan-only persistence, simulated short-lived process completion, deletion protection, restart-detached reconciliation, and frontend type/build checks are queued for the final batch.
+
+## 25. Cross-session reconciliation and final continuation — ACTIVE (2026-08-07 04:00 CDT)
+
+### 25.1 Referenced-session handoff
+
+- **Direct source reviewed:** @session:personal/20260807_022452_3d4389. Its historical deployment observations are secondary to the current workspace/listeners; its code/test handoff was reconciled file-by-file against this branch.
+- The session's web research, Decompose/Delegate, runtime deployment, and publication work is already represented by Sections 21–24 and commits through `ebcbefe`. Stale statements in that session claiming Canvas/Delegate wiring was missing, `/api/runtimes` was required, or publication had not occurred are superseded by the current tree and Sections 23–24.
+- New authoritative sibling edits now present in this dirty tree: structured Hermes inventory/read/dispatch receipts in `backend/hermes_adapter.py`; Hermes capability metadata in `backend/library.py`; safe `http/https` citation-link rendering in `RunInspector`; Delegate completion acceptance coverage; and focused Hermes/web-research receipt tests.
+
+### 25.2 Current workspace and live-state truth
+
+- **Branch:** `feat/shared-nanbeige-agentic-workspace`, based on published head `ebcbefecb7bc6654c6fa6d268d6385a616b75625`; the Phase 24 continuation is intentionally uncommitted.
+- **Dirty scope:** `.gitignore`, tracker, 15 tracked backend/frontend/test files, two new node components (`TtsNode.tsx`, `WebResearchNodes.tsx`), and two new focused test files. Current diff is approximately 556 insertions / 65 deletions before counting untracked files.
+- **Live accepted release remains healthy but stale relative to this source:** frontend `127.0.0.1:3000` and backend `127.0.0.1:8000/api/health` both return HTTP 200. Neither listener has been restarted with Phase 24 code.
+- No microphone/device use, TTS playback, public crawl, model load/inference, worker dispatch, Hermes profile mutation, public bind, or external send occurred during this continuation.
+
+### 25.3 Verification handoff and current blockers
+
+- The referenced session ran 12 tests. Eight durable-runtime tests passed, including plan-only Delegate and a configured short-lived child-completion scenario. Hermes inventory/read/path-rejection tests passed.
+- That first combined run ended with two fixture/API-call defects—not product acceptance: Hermes dispatch used a non-existent temporary workspace cwd, and the web context test called a LangChain tool wrapper directly instead of `.invoke`. Both test fixtures were subsequently corrected in the current tree.
+- Remaining pre-rerun review found two concrete integration risks to fix first: Hermes `Popen.communicate()` may flush an already-closed stdin unless the handle is cleared, and the Delegate acceptance test expects complete parent/child/context/completion receipt fields that must match the current API payload.
+- **Active next step:** repair those exact contracts, finish the Hermes truth/session receipt, then run one consolidated backend tests/compile + frontend type/build + diff/credential scan. Update this section with exact PASS/BLOCKED results before any restart, commit, push, or PR mutation.
+
+## 26. Full capability acceptance, OpenRouter, GPU lanes, timer, and feedback intake — ACTIVE (2026-08-07 04:07 CDT)
+
+### 26.1 Drew's new direction
+
+- Verify every canvas node, governed Library tool, route, approval path, failure path, cancellation path, restart/reconciliation path, and context handoff. No capability may be labeled working from registration alone; each must end as `PASS`, `BLOCKED`, `DISABLED`, or `FAIL` with evidence.
+- Add OpenRouter as an explicitly selected OpenAI-compatible provider. It must never become an implicit cloud fallback, must never serialize a key into graph/project/run context, and must expose exact model identity plus key-presence/readiness only.
+- Verify both NVIDIA GPUs with real bounded evidence, preserve separate physical-device identity, and expose selectable CPU, single-GPU, automatic, and multi-GPU/split profiles. A profile declaration is not live placement proof; runtime/model acceptance must report actual PID, device UUID, VRAM growth, and completion separately.
+- Preserve and promote the existing timer behavior: live Run Inspector polling remains separate from a visible elapsed/idle-unload timer. Timer controls must be bounded, cancellable, and not silently mutate a model runtime.
+- Add a local bug/feature suggestion intake surface. Draft creation is local and immediate; external publication remains approval-gated and must use a configured destination adapter with no credential/content leakage.
+
+### 26.2 Evidence captured before implementation
+
+- `nvidia-smi` driver inventory at `2026-08-07 04:07 CDT`: RTX 5060 Ti index 0, driver 591.44, 16,311 MiB total, 9,297 MiB used, 60% utilization, P0; RTX 2070 SUPER index 1, driver 591.44, 8,192 MiB total, 6,852 MiB used, 35% utilization, P3.
+- Loopback listeners: frontend `127.0.0.1:3000`, backend `127.0.0.1:8000`, SearXNG `127.0.0.1:8080`, Ollama `127.0.0.1:11434`; no `127.0.0.1:8081` listener observed.
+- Existing runtime declarations: active Nanbeige RTX 2070 SUPER route on `:8080`; unprovisioned RTX 5060 Ti target on `:8081`; planned dual-GPU review profile; model endpoint and hardware profile APIs already exist.
+- This is device/driver/listener evidence only. It does not yet prove a clean per-GPU model load, split placement, CUDA execution, or end-to-end generation.
+
+### 26.3 Implementation checklist
+
+1. **Capability matrix:** enumerate all `NodeType` values and Library resources; execute synthetic route/context/approval/error/cancel/restart checks; add live API receipts and exact blockers.
+2. **OpenRouter:** add provider/profile/model inventory and OpenAI-compatible generation path; credential aliases remain `env:`/`wincred:` only; add UI selection and explicit preflight; default fallback remains `explicit_only`.
+3. **GPU lanes:** seed/validate heterogeneous profiles, add split metadata and launch previews, verify both cards with bounded CUDA/runtime evidence, and distinguish declaration from live placement.
+4. **Timer:** retain the 750 ms run refresh loop, add visible elapsed/remaining/idle-unload state, and ensure Stop/Cancel/Reset clears timers and stale callbacks.
+5. **Feedback:** local draft persistence, bug/feature form, bounded environment/context metadata, duplicate-safe draft IDs, and approval-gated external publisher adapter.
+6. **Final batch:** Python tests/compile, frontend type/build, route matrix, GPU preflight, authorized model smoke, deployment reconciliation, cleanup, and tracker receipt.
+
+### 26.4 Decisions still required
+
+- External feedback destination for the approval-gated publisher: GitHub Issues, Linear, both, or local-only until explicitly approved.
+- GPU acceptance depth: read-only/preflight only, isolated single-GPU model smoke, or controlled single + dual-GPU model smokes. No production listener will be repointed implicitly.
+- OpenRouter model shortlist and cloud-use boundary: exact model IDs are user-selected; no provider-wide automatic fallback will be introduced.
+
+### 25.4 Hermes truth audit and consolidated source acceptance — PASS (2026-08-07 04:08 CDT)
+
+- Added exportable `GET /api/hermes/capability-audit`. It reports a deterministic audit ID, bounded skill inventory ID/count, configured dispatch target names only, active app-owned process IDs, and four explicit capability states: inventory, bounded read, approval-gated dispatch, and unsupported profile mutation.
+- Library readiness now consumes that audit: `list_hermes_skills`/`read_hermes_skill` are disabled when the skills root is unavailable; `dispatch_hermes_skill` is disabled with `hermes_dispatch_targets_not_configured` unless an allowlisted stdin adapter exists. Profile mutation is always disabled as `hermes_profile_mutation_not_supported`.
+- Hermes inventory/read/dispatch receipts now contain stable IDs/hashes/counts/failure classes; prompts travel only via bounded stdin. The subprocess stdin handle is cleared after write/close so monitored `communicate()` cannot flush a closed stream.
+- The first 13-test batch produced 12 passes and one real packet-shape error: zero-source context packets omitted `selected_count`. `build_research_context` now always emits `requested_count`, `selected_count`, and `dropped_count`; the focused retry passed.
+- **Backend final:** `env -u PYTHONPATH backend/.venv/Scripts/python.exe -m unittest discover -s tests -v` — 13 tests, all passed in 41.850 seconds. Python compilation of `backend/*.py` and `tests/*.py` passed.
+- **Frontend final:** `npm run typecheck` passed; isolated `NEXT_DIST_DIR=.next-phase24 npm run build` compiled successfully, passed lint/type validation, and generated 4/4 static pages. Generated `next-env.d.ts`/`tsconfig.json` edits were restored afterward.
+- **Fresh-process Hermes acceptance:** a new backend-venv interpreter used one temporary skills/workspace root and one dummy stdin-only Python adapter. Inventory/read/dispatch passed; child exit was 0; profile mutation remained false; before/after workspace inventory showed zero mutations. No real Hermes profile, skill, session, or agent was modified or invoked.
+- **Repository checks:** `git diff --check` passed. A scan of 817 added/changed/untracked source lines found zero hardcoded credential candidates. Warnings are limited to existing Starlette/httpx and LangGraph deprecations.
+- **Remaining acceptance boundary:** real microphone capture/Buzz model use, browser TTS playback, public-page retrieval, model inference, cloud/provider calls, real product-worker dispatch, and real Hermes adapter dispatch remain unexercised approval/configuration-gated paths. Their code paths are implemented and truthfully reported; this PASS does not imply device/provider acceptance.
+- **Next step:** deploy `.next-phase24` plus the verified backend on loopback, smoke the frontend/health/general audit/Hermes audit and one plan-only durable workflow, then update this tracker with live receipts before publication.
+
+### 25.5 Phase 24 live deployment receipt — PASS (2026-08-07 04:10 CDT)
+
+- Created source/test/tracker rollback archive `.hermes/backups/phase24-predeploy-20260807-0408.zip`: 21 files, 130,304 bytes. Generated/runtime output and credentials are excluded; `.hermes/` remains ignored.
+- Replaced only the prior loopback listeners (frontend PID `176704`, backend PID `176664`). The first combined kill command was rejected by the shell lifecycle guard before execution; the serialized retry succeeded for both exact PIDs.
+- **Live frontend:** `.next-phase24` production build at `http://127.0.0.1:3000`, listener PID `59316`, tracked process `proc_896385a0c4af`; root returned HTTP 200 with 29,849 bytes.
+- **Live backend:** project venv with `PYTHONPATH` cleared at `http://127.0.0.1:8000`, listener PID `54016`, tracked process `proc_cec3ceed9190`; health returned HTTP 200.
+- **Live audits:** `/api/library/capability-audit` returned HTTP 200 with 231 resources and zero invalid-ready entries. `/api/hermes/capability-audit` returned HTTP 200: inventory ready with 192 bounded skill records, no configured dispatch target, `hermes_dispatch_targets_not_configured`, and profile mutation false.
+- **Live durable smoke:** deployed Start → Delegate(plan-only) completed with 2 steps and 1 persisted child in `planned` state. No worker was launched. The retained run was deleted through the HTTP API with status 200.
+- No microphone/device use, TTS playback, public crawl, model inference, cloud call, real worker/Hermes dispatch, profile mutation, public bind, or external send occurred during deployment/acceptance.
+- **Current publication state:** live Phase 24 behavior is accepted; source remains intentionally dirty and uncommitted pending final manifest review, tracker closure, commit/push, and PR #1 update.
