@@ -16,7 +16,8 @@ from .hermes_adapter import list_hermes_skills
 from .ollama_control import list_ollama_models, preflight_ollama_model
 from .runtime_control import list_runtime_profiles, preflight_runtime_profile
 from .schema import GraphDocument
-from .tools import APPROVAL_REQUIRED_TOOLS, WORKSPACE_TOOL_CATALOG, WORKSPACE_TOOLS
+from .tools import APPROVAL_REQUIRED_TOOLS, WORKSPACE_TOOL_CATALOG, WORKSPACE_TOOLS, preview_workspace_mutation
+from .web_research import web_preflight
 
 ResourceCategory = Literal["tool", "agent", "skill", "model", "runtime", "template"]
 
@@ -152,6 +153,23 @@ def _templates() -> list[dict[str, Any]]:
             "description": "Preflight an exact named local runtime profile without activating it.",
             "nodes": [("start", {}), ("runtime", {"profile_id": "ollama-local-models"})],
         },
+        {
+            "template_id": "deep-research-context",
+            "label": "Deep research to cited context",
+            "description": "Use workflow input as a local SearXNG research query, build a bounded cited context packet, and pass it to a local model.",
+            "nodes": [
+                ("start", {}),
+                ("tool", {"resource_id": "tool:deep_research", "arguments": {"query": "", "max_pages": 8, "max_results_per_query": 6, "extract_pages": True}}),
+                ("tool", {"resource_id": "tool:build_research_context", "arguments": {"context_text": "", "max_chars": 30000}}),
+                ("coder", {"provider": "nanbeige", "model": "nanbeige4.2-3b-local"}),
+            ],
+        },
+        {
+            "template_id": "decompose-worker-plan",
+            "label": "Decompose worker plan",
+            "description": "Split workflow input into a bounded worker plan; dispatch remains off until a configured worker and approval policy are selected.",
+            "nodes": [("start", {}), ("delegate", {"dispatch_mode": "plan_only", "decompose_strategy": "checklist", "max_subtasks": 8})],
+        },
     ]
 
 
@@ -192,8 +210,10 @@ def _static_model_readiness(provider: str) -> tuple[bool, str | None]:
 
 def library_resources() -> list[LibraryResource]:
     resources: list[LibraryResource] = []
+    web_status = web_preflight()
     for item in WORKSPACE_TOOL_CATALOG:
         name = str(item["name"])
+        web_unavailable = name in {"search_web", "deep_research"} and not web_status.get("ready")
         resources.append(
             LibraryResource(
                 resource_id=f"tool:{name}",
@@ -201,6 +221,8 @@ def library_resources() -> list[LibraryResource]:
                 label=name.replace("_", " ").title(),
                 description=str(item.get("description", "")),
                 scope=str(item.get("scope", "workspace")),
+                ready=not web_unavailable,
+                disabled_reason=str(web_status.get("failure_class") or "search backend unavailable") if web_unavailable else None,
                 requires_approval=bool(item.get("requires_approval")),
                 capabilities=["add_to_canvas", "run_now"],
                 arguments_schema=_tool_schema(name),
@@ -323,6 +345,33 @@ def query_library(category: str | None = None, query: str | None = None, limit: 
     return {"resources": [item.model_dump(mode="json") for item in page], "total": len(items), "offset": bounded_offset, "limit": bounded_limit, "category_counts": counts, "mutation": "none"}
 
 
+def capability_audit() -> dict[str, Any]:
+    tool_handlers = {str(getattr(tool, "name", "")): tool for tool in WORKSPACE_TOOLS}
+    rows: list[dict[str, Any]] = []
+    for resource in library_resources():
+        handler = ""
+        primary_action = ""
+        schema_present = bool(resource.arguments_schema)
+        executable = False
+        if resource.category == "tool":
+            name = resource.resource_id.split(":", 1)[1]
+            handler = name if name in tool_handlers else ""
+            primary_action = "invoke_tool"
+            executable = bool(handler and schema_present and resource.ready)
+        elif resource.category == "agent":
+            handler, primary_action, executable = "trigger_agent", "dispatch_agent", resource.ready
+        elif resource.category == "skill":
+            handler, primary_action, executable = "read_hermes_skill", "inspect_skill", resource.ready
+        elif resource.category == "model":
+            handler, primary_action, executable = "model_route", "generate", resource.ready
+        elif resource.category == "runtime":
+            handler, primary_action, executable = "preflight_runtime_profile", "preflight", resource.ready
+        elif resource.category == "template":
+            handler, primary_action, executable = "instantiate_template", "instantiate", resource.ready
+        rows.append({"resource_id": resource.resource_id, "category": resource.category, "ready": resource.ready, "executable": executable, "primary_action": primary_action, "handler": handler, "schema_present": schema_present, "requires_approval": resource.requires_approval, "disabled_reason": resource.disabled_reason or ("handler or argument schema is unavailable" if resource.ready and not executable else "")})
+    return {"resources": rows, "total": len(rows), "ready": sum(1 for row in rows if row["ready"]), "executable": sum(1 for row in rows if row["executable"]), "invalid_ready": [row for row in rows if row["ready"] and not row["executable"]]}
+
+
 def get_resource(resource_id: str) -> LibraryResource:
     for item in library_resources():
         if item.resource_id == resource_id:
@@ -346,9 +395,20 @@ def preview_action(payload: ActionPreviewPayload) -> dict[str, Any]:
     if not resource.ready:
         raise ValueError(resource.disabled_reason or "resource is not ready")
     approvals = []
+    arguments = dict(payload.arguments)
+    impact_preview = ""
+    if resource.category == "tool":
+        tool_name = resource.resource_id.split(":", 1)[1] if ":" in resource.resource_id else ""
+        if tool_name in {"create_workspace_file", "patch_workspace_file", "rename_workspace_file", "delete_workspace_file"}:
+            impact = preview_workspace_mutation(tool_name, arguments)
+            impact_preview = str(impact.get("diff", ""))
+            for key in ("expected_absent", "expected_sha256"):
+                if key in impact:
+                    arguments[key] = impact[key]
     if resource.requires_approval:
         approvals.append({"resource_id": resource.resource_id, "label": resource.label, "scope": resource.scope})
-    return {"resource": resource.model_dump(mode="json"), **_store_preview("action", payload.model_dump(mode="json"), approvals)}
+    subject = {"resource_id": payload.resource_id, "arguments": arguments}
+    return {"resource": resource.model_dump(mode="json"), "arguments": arguments, "impact_preview": impact_preview, **_store_preview("action", subject, approvals)}
 
 
 def run_action(payload: ActionRunPayload, workspace_root: Path) -> dict[str, Any]:
@@ -411,6 +471,10 @@ def _graph_approvals(graph: GraphDocument) -> list[dict[str, str]]:
             target = str(node.data.get("target") or "")
             resource_id = f"agent:{target}"
             label = target or "Configured agent"
+            scope = "workspace-agent"
+        elif node.type == "delegate" and str(node.data.get("dispatch_mode") or "plan_only") != "plan_only":
+            resource_id = f"delegate:{node.id}"
+            label = "Dispatch decomposed worker tasks"
             scope = "workspace-agent"
         elif node.type == "file" and str(node.data.get("mode") or "read") == "write":
             resource_id = f"file-write:{node.id}"

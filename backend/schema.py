@@ -7,7 +7,9 @@ from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, ConfigDict, Field
 
 
-NodeType = Literal["start", "buzz", "planner", "coder", "file", "task", "agent", "tool", "runtime"]
+NodeType = Literal["start", "buzz", "planner", "coder", "file", "task", "agent", "tool", "runtime", "review", "chat", "split", "merge", "context", "plugin", "delegate"]
+ApprovalPolicy = Literal["preflight", "per_action", "step_through"]
+BranchMode = Literal["parallel", "sequential", "conditional", "chunked"]
 NODE_ID_PATTERN = r"^[A-Za-z][A-Za-z0-9_-]{0,119}$"
 EDGE_ID_PATTERN = r"^[A-Za-z][A-Za-z0-9_-]{0,159}$"
 
@@ -45,11 +47,15 @@ class GraphEdge(BaseModel):
     id: str = Field(min_length=1, max_length=160, pattern=EDGE_ID_PATTERN)
     source: str = Field(min_length=1, max_length=120, pattern=NODE_ID_PATTERN)
     target: str = Field(min_length=1, max_length=120, pattern=NODE_ID_PATTERN)
+    label: str = Field(default="", max_length=120)
+    priority: int = Field(default=0, ge=-1000, le=1000)
+    condition: dict[str, Any] = Field(default_factory=dict)
 
 
 class GraphDocument(BaseModel):
     nodes: list[GraphNode] = Field(default_factory=list, max_length=80)
     edges: list[GraphEdge] = Field(default_factory=list, max_length=160)
+    settings: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProjectPayload(BaseModel):
@@ -63,6 +69,20 @@ class RunPayload(BaseModel):
     input_text: str = Field(default="", max_length=200_000)
     project_id: str | None = Field(default=None, max_length=64)
     approval_preview_id: str | None = Field(default=None, max_length=80)
+    approval_policy: ApprovalPolicy = "per_action"
+    max_parallel: int = Field(default=4, ge=1, le=8)
+    retain_context: bool = True
+
+
+class RunDecisionPayload(BaseModel):
+    decision: Literal["approve", "deny", "cancel", "edit"]
+    arguments: dict[str, Any] | None = None
+    note: str = Field(default="", max_length=4000)
+    approve_identical: bool = False
+
+
+class RunChatPayload(BaseModel):
+    content: str = Field(min_length=1, max_length=200_000)
 
 
 class ValidationPayload(BaseModel):

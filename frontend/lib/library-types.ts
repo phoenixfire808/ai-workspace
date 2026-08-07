@@ -10,11 +10,11 @@ export type LibraryResource = {
   disabled_reason?: string | null;
   requires_approval: boolean;
   capabilities: string[];
-  arguments_schema?: { properties?: Record<string, { type?: string; title?: string; default?: unknown }> };
+  arguments_schema?: { properties?: Record<string, { type?: string; title?: string; description?: string; default?: unknown; enum?: unknown[] }> };
   provider?: string | null;
   model?: string | null;
   metadata?: Record<string, unknown>;
 };
 
 export type ApprovalItem = { resource_id: string; label: string; scope: string };
-export type ApprovalPreview = { preview_id: string; approvals: ApprovalItem[]; requires_approval: boolean };
+export type ApprovalPreview = { preview_id: string; approvals: ApprovalItem[]; requires_approval: boolean; arguments?: Record<string, unknown>; impact_preview?: string };

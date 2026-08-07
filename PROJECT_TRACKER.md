@@ -84,6 +84,60 @@ Keep the existing publisher-fork Nanbeige runtime on the RTX 2070 SUPER as the v
 | 2026-08-07 01:19 CDT | Resizable layout deployed and accepted | Added bounded draggable splitters, keyboard resize, collapse/reopen rails, persisted/resettable panel state, 320/340 px defaults, and a 286 px vertically resizable library list. TypeScript and isolated Next production build passed. Acceptance on `:3001` verified keyboard resize from 320 to 340 px, collapse/reopen persistence, right-panel canvas expansion, reset, and list sizing; the disposable server was stopped. Replaced only stale frontend PID `5976`, launched the accepted build on `:3000` (`Ready in 1513ms`, listener PID `107676`), confirmed 217 hydrated resources and HTTP 200 for frontend/backend, and preserved `.next-pre-resizable-20260807-0107` for rollback. Backend/model listeners were untouched. |
 | 2026-08-07 01:24 CDT | GitHub publication authorized | Drew explicitly authorized commit, push, and PR publication. The current branch is `feat/shared-nanbeige-agentic-workspace`, synchronized with origin, and already owns open PR #1. Publication will update that PR rather than create a duplicate. Scope is the accepted resizable-layout frontend and tracker receipts; transient isolated-build references are excluded before staging. |
 | 2026-08-07 01:25 CDT | Resizable UI feature published | Committed the accepted layout slice as `470fe60` (`feat(ui): add resizable workspace panels`) with four scoped files and pushed `feat/shared-nanbeige-agentic-workspace` to origin. The existing open PR #1 is the authoritative review surface, avoiding a duplicate PR. Generated isolated-build path edits were removed before staging; the pushed commit contains the resizable/collapsible/persisted panels, taller resizable library list, CSS, and tracker receipts only. |
+| 2026-08-07 01:30 CDT | Functional tools + human-in-the-loop requested | Drew requested that every exposed option perform a real bounded action, protected actions pause for meaningful human review, each run carry useful context, and execution visibly show what each node/tool does. Planning is active before implementation. Current source has seven governed tool contracts, one-shot action/graph preview tokens, a basic combined approval modal, transient SSE node status lines, and chat tool-start/tool-end events, but it does not yet provide a durable inspectable run timeline, editable per-action pause/resume, retained graph/input/tool context, or a verified capability receipt for every one of the 217 library entries. Exact coverage, approval granularity, and context-retention policy await Drew's confirmation. |
+| 2026-08-07 01:49 CDT | Durable HITL runtime scope frozen | Drew selected the full configurable design: every library entry must have a real primary action or visible disabled reason; tools must be easy to drag/place/run; file operations include create, patch, rename, and delete with exact per-action diff approval; any node may fan out in parallel, sequentially, conditionally, or through chunked map execution; joins support selectable merge strategies; Human Review and Chat Input are draggable nodes; workflows can choose preflight, per-action, or step-through approval; Planner exposes every applicable model/prompt/tool/context/routing/chunk/approval control; registered local plugins are permitted but placeholders are not. Full local graph/input/step/argument/output/diff/approval/error/timing context is retained until explicit transactional deletion. The detailed implementation plan is `.hermes/plans/2026-08-07_014925-durable-hitl-workflow-runtime.md`. No runtime implementation begins until Drew approves that plan. |
+| 2026-08-07 01:58 CDT | Model routing plan revision requested | Drew did not approve implementation yet and requested that the frozen plan add model placement on any selected graphics card plus Ollama Cloud/custom endpoint configurations. Revision planning must cover per-node/per-model hardware selection, Auto/CPU/single-GPU/multi-GPU policies where supported, VRAM/readiness guards, bounded load/unload/queue behavior, local Ollama and remote/custom provider profiles, secret-safe credential storage, visible endpoint/model readiness, and exact fallback rules. Official Ollama Cloud versus arbitrary compatible endpoint scope awaits clarification before the plan is rewritten. |
+| 2026-08-07 02:04 CDT | Model routing revision completed | Drew selected all endpoint and hardware options plus maximum applicable advanced settings. The plan now supports local desktop Ollama, managed isolated loopback Ollama instances, LAN Ollama, official Ollama Cloud through local offload or direct API, arbitrary Ollama-compatible/OpenAI-compatible endpoints, and existing Nanbeige/LFM/MiniMax profiles. Model nodes can select Auto, CPU, any stable discovered GPU, ordered multi-GPU sets, or saved hardware profiles. Because Ollama controls placement within a server, strict GPU targeting uses separate visible-device runtime profiles and records requested versus observed processor placement; no per-request GPU guarantee is fabricated. All cloud/fallback policies are selectable and default to explicit-only. Credential aliases stay outside graphs/run history. Official Ollama cloud/FAQ/API docs were discovered through local SearXNG and incorporated into `.hermes/plans/2026-08-07_014925-durable-hitl-workflow-runtime.md`. Implementation still awaits Drew's approval. |
+| 2026-08-07 02:06 CDT | Revised durable runtime plan approved | Drew explicitly approved the complete revised plan and authorized implementation. Primary-session ownership remains in force with no delegated workers. Implementation order is durable run/decision storage, capability-bound file mutation, branch/chunk/merge scheduling, endpoint/hardware profiles, approval/chat/plugin runtime, and Run Inspector UI; broad tests and live replacement remain deferred to the final consolidated acceptance batch. The currently deployed `:3000`/`:8000` services remain untouched during construction. |
+| 2026-08-07 02:20 CDT | Branch-ready implementation handoff | Drew intends to branch the approved durable-runtime work and may assign another worker. The canonical tracker was updated before that branch cut with the exact dirty-worktree state, ownership boundaries, safe parallel lanes, known incompleteness, and required return receipts below. No checkpoint commit, branch, worktree, test, service restart, deployment, or external action was performed by the parent while preparing this handoff. |
+| 2026-08-07 02:24 CDT | Parent implementation resumed | Drew directed work to continue after the branch-ready handoff. No worker receipt or sibling branch change was present in the canonical checkout. The parent claims Lane A plus the already-owned mutation contracts: durable scheduler/API integration in `backend/execution_runtime.py`, `backend/graph.py`, and `backend/main.py`, with coordinated use of the existing `schema.py`, `database.py`, `tools.py`, and `library.py` edits. Frontend/model lanes remain unclaimed and may be assigned only under the non-overlap protocol below. Live services remain untouched and testing stays deferred to the final batch. |
+| 2026-08-07 02:46 CDT | Integrated implementation pass + concurrent-write incident | Parent added the durable run engine, run/history/decision/chat/delete APIs, capability audit, endpoint/hardware profile registry, explicit endpoint generation adapter, GPU inventory and managed-Ollama launch previews; frontend work added six control nodes, branching connections, schema-generated library arguments, drag/double-click placement, advanced Planner/Coder route settings, approval-policy selection, and a retained Run Inspector. New parent files are `backend/execution_runtime.py`, `backend/model_profiles.py`, `frontend/components/ModelRouteSettings.tsx`, `frontend/components/RunInspector.tsx`, and `frontend/components/nodes/WorkflowControlNodes.tsx`; shared files are listed by Git. No final tests or deployment have run. During this pass, an unclaimed concurrent actor replaced all of `README.md` with an unrelated request for an undetectable Twitch view bot and created `output/generated.md` containing generic unsupported workflow-analysis prose. Parent restored tracked `README.md` exactly from HEAD because the overwrite was unrelated repository corruption. `output/generated.md` was inspected but preserved pending ownership/cleanup direction. No worker receipt identified the actor, branch, or worktree; future workers must not write in the parent worktree and must register before editing. |
+| 2026-08-07 03:06 CDT | Durable runtime acceptance and controlled deployment | Parent reconciled the full tracker and sibling additions, corrected a broken concurrent `runtime_control` import, integrated the bounded Decompose/Delegate plan-only path, concrete plugin registry, local SearXNG research tools, endpoint/hardware routing, and approval-gated app-owned Ollama start/stop/preload/unload tools. Consolidated checks passed: `backend/.venv/Scripts/python.exe -m py_compile backend/*.py`; frontend `npm run typecheck`; `git diff --check`; credential-value scan (`0` matches); isolated Next production build (`NEXT_DIST_DIR=.next-hitl npm run build`, compiled and generated 4/4 pages); and `backend/.venv/Scripts/python.exe -m unittest discover -s tests -p 'test_durable_runtime.py' -v` (`7` tests, `OK`). The suite proves capability-audit honesty, endpoint/hardware inventory, split/merge/plugin execution, durable Human Review and Chat Input resume, step-through policy, Decompose plan-only behavior, exact file create/patch/rename/delete previews, stale-preimage rejection, single-use approval/replay rejection, retained-context deletion, and no model/audio/cloud/worker side effect. A source-only rollback archive was created at `.hermes/backups/hitl-predeploy-20260807_030051.zip` with 25 files. Exact prior listeners on ports 8000/3000 were replaced; new tracked backend/frontend sessions became ready, health/root returned HTTP 200, capability audit reported 227 resources and zero invalid-ready entries, and a live Start→Decompose(plan-only) durable run completed with two steps/five events and was transactionally deleted. `output/` is now ignored as a local runtime artifact. No microphone, TTS playback, model inference/load, cloud request, actual worker dispatch, Hermes mutation, or public send was exercised; those device/provider acceptance lanes remain explicit BLOCKED/DEFERRED until separately authorized/configured rather than falsely reported as passing. |
+
+## 1.2A Durable runtime branch handoff — ACTIVE (2026-08-07 02:20 CDT)
+
+### Authoritative source and branch-cut warning
+
+- **Parent checkout:** `C:\Users\Drew\Documents\Jarvis_Context\Projects\ai-workspace`
+- **Current parent branch:** `feat/shared-nanbeige-agentic-workspace`, synchronized with `origin/feat/shared-nanbeige-agentic-workspace` before the current uncommitted implementation began.
+- **Approved specification:** `.hermes/plans/2026-08-07_014925-durable-hitl-workflow-runtime.md` (332 lines at handoff). This is the worker's primary scope contract; `PROJECT_TRACKER.md` remains the append-preserving progress and reconciliation record.
+- **Dirty-worktree warning:** the current implementation is not committed. `git switch -c <branch>` in this same worktree carries these edits, but a separate worktree/clone created from the current HEAD or remote branch will not contain them. Before a separate worker starts from another worktree, create an explicit checkpoint commit or transfer an exact patch; do not assume the five edits exist there.
+- **Live boundary:** the currently deployed frontend/backend remain the previously accepted build on loopback. The unfinished source has not been deployed. Do not replace `:3000` or `:8000`, start the unverified LFM route, download models, invoke cloud endpoints, or activate a managed model fleet during implementation lanes.
+
+### Exact uncommitted parent state
+
+At handoff, `git diff --stat` reports **5 modified files, 252 insertions, 4 deletions**:
+
+| File | Parent-owned changes now present | State / caveat |
+|---|---|---|
+| `backend/schema.py` | Added review/chat/split/merge/context/plugin node literals, approval/branch policy types, edge label/priority/condition, graph settings, durable run fields, and decision/chat payloads. | Syntax auto-lint passed. Runtime validators and frontend types do not consume the new contracts yet. |
+| `backend/database.py` | Added additive SQLAlchemy models for workflow runs, steps, events, approval requests, endpoint profiles, and hardware profiles. | Syntax auto-lint passed. No repository-layer helpers, transactional deletion, event sequencing, recovery, or acceptance migration check exists yet. Importing the updated module will create tables in the configured database, so workers should use a temporary DB until integration. |
+| `backend/tools.py` | Added create/patch/rename/delete schemas, workspace-rooted preview generation, unified diffs, SHA-256 preimage guards, atomic text writes, mutation handlers, and approval-required catalog registration. | Syntax auto-lint passed. No consolidated behavioral test has run. The final approval capability is not yet checked inside these actuators; the durable scheduler must supply and consume that gate. |
+| `backend/library.py` | Began enriching mutation previews with exact diffs and server-generated `expected_sha256`/`expected_absent` arguments, binding the preview subject to those normalized arguments. | A temporary syntax typo was corrected and syntax auto-lint then passed. Frontend approval state still sends the original arguments, so protected file quick-run is incomplete until it consumes returned normalized arguments and impact preview. |
+| `PROJECT_TRACKER.md` | Recorded the approved product contracts, model-routing revision, implementation start, and this branch handoff. | Documentation only; preserve and append rather than replacing history. |
+
+### Known incomplete or blocked seams
+
+1. `backend/graph.py` still rejects multiple outgoing edges and does not execute the six new node kinds.
+2. No durable scheduler, pause/resume recovery, branch/chunk lineage, merge barriers, capability consumption, or idempotent side-effect ledger exists yet.
+3. `backend/main.py` does not expose durable run/history/event/decision/chat/delete/capability-audit/profile APIs.
+4. No model endpoint/profile control plane, isolated Ollama runtime manager, GPU inventory/placement verifier, or credential-alias resolver exists yet.
+5. The frontend has no new node components, Advanced settings, route/profile managers, schema-generated argument form, normalized mutation preview handling, or Run Inspector.
+6. Existing `ApprovalReview` remains a one-shot preflight modal rather than a durable per-action Human Review surface.
+7. No broad or focused test was run after implementation began, by explicit policy. Nothing in this handoff is an acceptance receipt.
+
+### Recommended non-overlapping worker lanes
+
+Workers must claim exactly one lane and append owner, branch/worktree, start SHA, and files before editing:
+
+- **Lane A — durable scheduler/API:** create `backend/execution_runtime.py`; modify `backend/graph.py` and `backend/main.py`; add run-store helpers in a new module if possible. Treat the current `schema.py` and `database.py` changes as contracts and avoid rewriting them without a tracker receipt.
+- **Lane B — frontend canvas/inspector:** create Human Review, Chat Input, Split, Merge, Context, Plugin, Advanced settings, model-route controls, and Run Inspector components; modify `frontend/components/Canvas.tsx`, `frontend/components/nodes/types.ts`, `frontend/components/LibraryPanel.tsx`, and `frontend/app/globals.css`. This is the safest disjoint lane while the parent owns backend mutation contracts.
+- **Lane C — model routing:** create `backend/model_profiles.py` and `backend/model_runtime.py`; modify `backend/ollama_control.py` and `backend/runtime_control.py`. Coordinate before touching `schema.py`, `database.py`, `graph.py`, or `main.py`. Do not launch, stop, or repoint real services during implementation.
+- **Lane D — acceptance fixtures/audit:** add temporary-workspace/temporary-SQLite tests and capability-audit fixtures without changing runtime source. Do not run GPU/model/cloud/agent acceptance until the parent schedules the final batch.
+
+### Integration and return-receipt contract
+
+Every worker handoff must append: owner/session, branch and worktree path, start/base SHA, claimed lane, files changed, commits, behavioral summary, tests actually run with exact results, tests deliberately not run, blockers, live side effects (normally none), and integration status. A worker must not claim another lane's files without first recording the overlap. The parent will re-read this tracker, inspect diffs, reconcile schema/API contracts, run the final consolidated checks, preserve rollback, and decide deployment/PR integration. Worker self-reports are not acceptance until parent-verified.
 
 ## 1.3 Branch handoff and autonomy boundary — ACTIVE
 
@@ -755,3 +809,235 @@ Format all code cleanly. Acknowledge this prompt by outputting a brief plan, and
 - PR #1 is open and non-draft at `https://github.com/phoenixfire808/ai-workspace/pull/1`, targeting `main`; its title/body now describe the unified library, approval controls, Ollama-first route, read-only runtime/terminal/upgrade boundaries, verification, and deferred mutations.
 - The isolated current frontend smoke server on `127.0.0.1:3001` exited with code `-15` after returning HTTP 200 with the M⊕ marker; no temporary test process remains. Existing baseline loopback services were not targeted by this smoke cleanup.
 - Publication closeout is complete for the current GitHub/PR target. Runtime activation, interactive terminal sessions, downloads, service cutover, external hosting, and rollback mutation remain intentionally deferred and are not claimed by this receipt.
+
+## 19. Complete functionality, voice, and execution-visibility roadmap — 2026-08-07 02:27 CDT
+
+### 19.1 Drew's requested outcome
+
+Drew wants the workspace treated as a real, inspectable local automation product rather than a visual catalog of partial integrations. Every exposed tool, agent, skill, model route, runtime, template, Buzz transcription control, TTS control, Hermes action, and workflow execution path must either work end-to-end or clearly show why it is unavailable. When a run executes, Drew must be able to see what each node and tool did, what context it received, what approval decision allowed it, what it returned, and where the run stopped.
+
+This section is an append-only roadmap annotation. It records the product contract and future acceptance gates; it does not claim that the items below are already implemented.
+
+### 19.2 Annotation legend
+
+- **`[NOW]`** — active parent-owned implementation or reconciliation target.
+- **`[NEXT]`** — the next implementation slice after the current tracker/branch handoff.
+- **`[AUDIT]`** — must be checked against source and a real bounded execution path; catalog presence is not evidence.
+- **`[HITL]`** — must pause for a meaningful, resumable human decision before the protected action continues.
+- **`[VOICE]`** — Buzz/local audio feature with explicit consent, device, and capture boundaries.
+- **`[ACCEPTANCE]`** — final consolidated evidence required before publication or deployment claims.
+- **`[BLOCKED]`** — cannot be called functional until the named dependency or user authorization exists.
+- **`[DEFERRED]`** — intentionally not activated during construction; preserve the boundary rather than silently substituting another route.
+
+### 19.3 Functional product contracts
+
+1. **[AUDIT] Capability truth:** Every library entry has one of three honest states: a tested primary action, a bounded failure with a specific remediation, or a visible disabled/unavailable reason. No placeholder handlers, fake success payloads, silent no-ops, or catalog-only claims.
+2. **[HITL] Human review:** Protected actions pause in a durable review state. The review surface shows the exact action, normalized arguments, affected files/targets, diff or impact preview, risk class, requesting node, and current run context. Drew can approve, deny, edit, cancel, or resume without losing the run.
+3. **[AUDIT] Visible execution:** Each run exposes a chronological inspector timeline with run ID, graph/node IDs, start/finish timestamps, status, input/context references, selected model/runtime, tool calls, bounded arguments, approval events, outputs, failure classes, retries, branch/chunk lineage, and final result. Sensitive content remains out of logs while the UI still provides useful bounded previews.
+4. **[NOW] Durable context:** Retained context includes the original workflow/input, graph snapshot, node configuration, per-step state, tool result metadata, approval decisions, user chat continuations, and model/runtime readiness evidence. Retention lasts until Drew explicitly performs a transactional delete; delete receipts must be visible.
+5. **[AUDIT] Local-first boundary:** No cloud transcription, telemetry, implicit network fallback, credential leakage, raw audio logging, transcript logging, clipboard logging, or target-field logging. Explicitly selected remote model endpoints remain distinguishable from local routes and fail closed when unavailable.
+
+### 19.4 Buzz transcription roadmap
+
+- **[VOICE][NEXT] Record control:** Add a clear Record/Stop button to the Buzz transcription surface and/or Buzz node. The control must show `idle → requesting consent → preparing device → recording → transcribing → stopped/error`, disable duplicate starts, and allow an explicit cancel.
+- **[VOICE][HITL] Consent and device gate:** Require explicit opt-in before microphone or call/system-audio capture. Show the selected endpoint/API, readiness, and failure reason without opening or changing devices implicitly. Synthetic UI success must not be reported as microphone acceptance.
+- **[VOICE][AUDIT] Real event flow:** Verify one authorized utterance through bounded metadata events: capture start, frame/peak receipt, partial transcript, final transcript, stop, and reset. Never write raw audio or transcript text to logs or the tracker.
+- **[VOICE][NEXT] Transcript handoff:** Make final Buzz text a real workflow input that can feed Planner, Coder, Chat Input, or a user-approved downstream node. Preserve the source run/context ID and distinguish transcript-derived input from typed input.
+- **[VOICE][ACCEPTANCE] Device/model boundary:** Separate synthetic parser/lifecycle checks, local API checks, and explicitly authorized Windows microphone/model acceptance. A working endpoint or UI button alone is not proof that audio frames or local STT inference succeeded.
+- **[VOICE][DEFERRED] Automatic capture:** No background capture, call recording, or participant/system-audio capture is enabled by default. These require their own explicit consent contract and acceptance receipt.
+
+### 19.5 Text-to-speech roadmap
+
+- **[VOICE][NEXT] TTS action:** Add a real Speak/Stop/Replay control and a workflow-capable TTS action. It must report provider, voice, readiness, duration/byte metadata, playback state, and bounded failure class.
+- **[VOICE][AUDIT] Provider truth:** Support only providers that are actually installed/configured for the selected lane. Local TTS is preferred when available; Edge/remote providers are explicit choices, not silent fallbacks. Missing dependencies or credentials produce a visible disabled reason.
+- **[VOICE][HITL] External audio boundary:** Playback is local and user initiated by default. No message send, call injection, broadcast, or external publication is implied by generating or playing speech. Any external send remains approval-gated.
+- **[VOICE][ACCEPTANCE] Playback proof:** Verify generation and playback separately: text accepted, audio produced, player started, player stopped/replayed, and errors surfaced. Do not claim TTS works from a successful configuration read alone.
+
+### 19.6 Hermes functionality roadmap
+
+- **[NOW][AUDIT] Hermes catalog:** Reconcile every exposed Hermes skill/agent entry with its actual local adapter, allowlist, required environment, and safe workspace root. Record `functional`, `blocked`, `disabled`, or `failed` with a reason.
+- **[NEXT] Hermes dispatch:** Make a selected Hermes skill/agent execute through the configured adapter and return bounded start/end/error events into the same Run Inspector timeline. The adapter must use the configured workspace root and never read or mutate profiles/credentials from graph JSON.
+- **[HITL] Protected Hermes operations:** Skill dispatch, file mutation, terminal-like operations, credential use, external messaging, and irreversible actions require the appropriate review mode. Approval must be consumed exactly once and bound to the normalized action arguments.
+- **[AUDIT] Context continuity:** Hermes receives the selected workflow context and returns a resumable run step, not an opaque success string. If a child session or process is created, its identity and continuity boundary are visible.
+- **[BLOCKED] Provider/runtime gaps:** Missing Hermes runtime, missing adapter, unavailable provider, or invalid configuration must remain an explicit failure/disabled state. Do not route to an unrelated coder model or claim Hermes success from catalog discovery.
+- **[ACCEPTANCE] Fresh-process proof:** Run a bounded Hermes smoke in a separate process/profile boundary, verify the exact response and session/run receipt, inspect durable session integrity read-only, and distinguish CLI, Desktop, gateway, and Buzz-managed ACP health.
+
+### 19.7 Complete functionality-audit matrix
+
+The final audit must produce a durable, exportable matrix with these columns:
+
+| Surface | Resource/action | Primary handler | Preconditions | Approval mode | Context/run receipt | Observed result | Verdict | Remediation |
+|---|---|---|---|---|---|---|---|---|
+| Library | tool / agent / skill / model / runtime / template | exact local adapter or handler | dependencies, endpoint, workspace, device | none / preflight / per-action / step-through | run ID + step IDs | bounded output/failure | PASS / BLOCKED / DISABLED / FAIL | exact next action |
+| Canvas | node type and edges | graph compiler/scheduler | schema, inputs, route readiness | graph policy | graph snapshot + lineage | event timeline | PASS / FAIL | source/API seam |
+| Buzz | record/transcribe/handoff | local capture + STT adapter | consent, device, model | explicit capture consent | transcript input provenance | frame/event receipt | PASS / BLOCKED / FAIL | device/model step |
+| Voice | speak/stop/replay | configured TTS adapter | provider/voice/player | local user action or explicit review | TTS step receipt | audio/playback receipt | PASS / BLOCKED / FAIL | dependency/config |
+| Hermes | skill/agent dispatch | local Hermes adapter | allowlist, profile, runtime | policy-bound review | child/session/run identity | start/end/error | PASS / BLOCKED / FAIL | adapter/runtime step |
+
+The audit must test both the happy path and the declared failure path for each category. A green inventory endpoint is not an execution receipt.
+
+### 19.8 Implementation order after branch cut
+
+1. **[NOW] Tracker and branch handoff:** Preserve this annotation before creating a separate branch/worktree. Record the branch, base SHA, ownership, and exact files before any worker edits. No worker has been started by this tracker update.
+2. **[NEXT] Durable run/inspector vertical slice:** Finish run/event/approval persistence, resume/cancel/delete semantics, bounded context rendering, and one real protected tool flow from preview → review → resume → visible result.
+3. **[NEXT] Capability audit:** Build a backend-owned capability report for all library entries and ensure the frontend renders disabled reasons and real action controls rather than assuming every catalog item is runnable.
+4. **[NEXT] Voice lane:** Implement Buzz Record/Stop/consent/event state and the transcript handoff contract, then add TTS Speak/Stop/Replay with provider readiness and local playback boundaries.
+5. **[NEXT] Hermes lane:** Complete allowlisted dispatch, bounded context transfer, visible child/session identity, and fresh-process acceptance without mutating live Hermes configuration or credentials.
+6. **[ACCEPTANCE] Consolidated audit and publication:** Run focused source checks first, then one final batch covering backend compile/import, frontend typecheck/build, API capability matrix, durable HITL lifecycle, run inspector rendering, one authorized voice path if provisioned, Hermes smoke, loopback health, and clean Git/PR receipts. Deploy only after all required verdicts are PASS or an explicit BLOCKED reason is recorded.
+
+### 19.9 Branch/worker handoff annotation
+
+- The tracker is now safe to use as the parent handoff document if Drew creates a branch or separate worktree.
+- Proposed disjoint lanes are **(A) durable runtime/Run Inspector**, **(B) Buzz transcription/TTS**, **(C) Hermes capability adapter/audit**, and **(D) read-only acceptance fixtures**. A lane must not edit another lane's owned files without recording an overlap and coordinating integration.
+- The parent remains responsible for source-of-truth reconciliation, live-service boundaries, final tests, device/model acceptance, deployment, commit/push, and PR updates.
+- Worker summaries are not completion evidence. Each handoff must include branch/worktree, base SHA, files changed, exact commands/results, deliberately skipped checks, blockers, live side effects, and integration status.
+- Until Drew explicitly creates/assigns the branch/worktree, continue parent-only and do not start parallel edits merely to fill lanes.
+
+### 19.10 Current status after this annotation
+
+- **Implemented before this entry:** unified local library, Ollama-first inventory/preflight, approval-aware quick actions, resizable panels, initial graph/schema/database/file-mutation foundations, and the open PR #1 publication history above.
+- **Not yet claimed:** complete functionality of all catalog entries, durable Run Inspector, resumable Human Review, Buzz record button, local STT acceptance, TTS playback, complete Hermes dispatch acceptance, or the final capability matrix.
+- **Live services:** preserve the previously accepted loopback boundaries during construction; do not replace them with unfinished source until the final acceptance gate passes.
+- **This entry's side effect:** tracker documentation only. No source implementation, branch creation, worker dispatch, service restart, model inference, audio capture, Hermes mutation, commit, push, or PR change was performed by this annotation.
+
+### 19.11 Tracker-write verification and current worktree reconciliation — 2026-08-07 02:27 CDT
+
+- The new roadmap section is present through line 899; the scoped `git diff --check -- PROJECT_TRACKER.md` passed with only Git's normal LF→CRLF warning.
+- A repository-wide `git diff --check` remains non-clean because `README.md:1` has pre-existing trailing whitespace. The unrelated README line was not changed or reformatted.
+- Current worktree inventory after the annotation: modified `PROJECT_TRACKER.md`, `README.md`, `backend/database.py`, `backend/graph.py`, `backend/library.py`, `backend/main.py`, `backend/schema.py`, and `backend/tools.py`; untracked `backend/execution_runtime.py` and `output/` are also present.
+- The newly observed `README.md`, `backend/execution_runtime.py`, and `output/` state must be inspected and classified before branching or publication. No assumption is made that these artifacts are safe to stage.
+
+## 20. Branch-aware implementation reconciliation — 2026-08-07 02:40 CDT
+
+- **Authoritative checkout:** `C:\Users\Drew\Documents\Jarvis_Context\Projects\ai-workspace`.
+- **Current branch:** `feat/shared-nanbeige-agentic-workspace`, currently at `d6f9616`, matching `origin/feat/shared-nanbeige-agentic-workspace`. `main` remains at `9b2c337`; no additional local branches or linked worktrees are present.
+- **Parent ownership:** This session is continuing parent-owned integration. No delegated worker or sibling branch receipt is present. Any future branch must read this tracker before editing and append its base SHA, ownership, files, commands, blockers, and integration status before claiming work.
+- **Current implementation found on disk:** durable runtime/API work is now present in `backend/execution_runtime.py`; model routing work is present in `backend/model_profiles.py` and `frontend/components/ModelRouteSettings.tsx`; Run Inspector and workflow-control node components are present in `frontend/components/RunInspector.tsx` and `frontend/components/nodes/WorkflowControlNodes.tsx`; Canvas and graph/schema/database/library/main files have additional uncommitted edits.
+- **Current acceptance state:** these changes are unverified and not deployed. The live accepted loopback services remain the previous published build. No model, audio, Hermes, cloud, or external action is being activated during this reconciliation.
+- **Next parent slice:** reconcile the durable runtime imports/API contract, wire the Run Inspector and workflow-control nodes into the canvas, then perform one bounded backend/frontend verification batch and record exact receipts before any branch or PR action.
+- **Known classification boundary:** the modified `README.md`, untracked `output/`, and any generated/cache artifacts remain outside the implementation until inspected. They must not be staged by assumption.
+
+## 21. Web search, deep research, and context ingestion roadmap — 2026-08-07 02:41 CDT
+
+### 21.1 Requested capability
+
+Drew wants the workspace to perform local-first web search and deeper multi-source research, then use the retrieved context inside workflows, agents, planners, coders, and the Run Inspector. Search must be a real governed capability: visible queries, source URLs, extraction status, citations, bounded evidence, failure reasons, and context provenance—not a fake result list or an opaque prompt injection path.
+
+This roadmap is additive to the functionality/HITL/voice/Hermes contract in Section 19 and must be read by every future branch/worktree before editing.
+
+### 21.2 Product contracts
+
+- **[WEB][NOW] Local discovery:** Route discovery through the local loopback SearXNG JSON API (`SEARXNG_URL`, default `http://127.0.0.1:8888`). Do not silently substitute a cloud search provider. If SearXNG is unavailable, show `search_backend_unavailable` and preserve the run as blocked rather than fabricating results.
+- **[WEB][NEXT] Search tool:** Add a real governed search action with query, category/time range, result limit, safe-search, language/region, and source-domain controls. Return normalized title, URL, engine/source metadata, snippet, rank, and a stable source ID.
+- **[WEB][NEXT] Deep-research action:** Support bounded query expansion, primary/official-source targeting, independent evidence, counterevidence/failure modes, date coverage, duplicate suppression, domain diversity, robots/rate-limit handling, and selected-page extraction. Keep maximum queries/pages/depth/concurrency bounded.
+- **[WEB][HITL] Retrieval boundary:** Search and page retrieval are network-facing actions and must be visible in the run timeline. A workflow-level review can authorize a deep crawl, domain allowlist, or remote page fetch; credential-bearing, private, localhost, and unsafe URLs fail closed.
+- **[WEB][AUDIT] Source safety:** Retrieved pages are untrusted evidence, never instructions. Do not execute commands, follow workflow instructions, reveal secrets, or mutate files because a page says to do so. Respect robots, redirect, DNS/private-address, response-size, timeout, and per-domain limits.
+- **[WEB][NEXT] Context packet:** Convert selected search/extraction results into a bounded structured packet containing source IDs, URLs, titles, excerpts, claims, fetched-at metadata, extraction status, and citation links. Preserve source provenance when the packet enters Planner/Coder/Agent/Hermes context.
+- **[WEB][AUDIT] Visible context use:** The Run Inspector must show which sources were selected, what bounded excerpts entered each step, the context size/trim decision, and the citations returned by the model/tool. Raw full pages are not copied into every prompt by default.
+- **[WEB][VOICE] Buzz handoff:** A Buzz transcript can seed a search/deep-research query. The transcript remains tagged as user-provided input, while retrieved sources remain separately tagged evidence; neither may be confused in the final context packet.
+- **[WEB][MODEL] Local synthesis:** When the dedicated loopback Nanbeige endpoint is healthy and advertises `nanbeige4.2-3b-local`, downstream evidence synthesis may use the RTX 2070 SUPER route. This does not claim SearXNG discovery or HTTP crawling is GPU-accelerated. Never substitute Qwen or another coder model for this synthesis lane.
+- **[WEB][DEFERRED] Remote model fallback:** Search/extraction can still produce a source dossier without model synthesis. If Nanbeige synthesis is unavailable, mark synthesis blocked and retain the evidence files; do not silently use cloud or another model.
+- **[WEB][ACCEPTANCE] Evidence receipts:** A web-capability acceptance receipt must include the backend used, query count, result count, selected sources/domains, extraction success/failure classes, context packet hash/size, citations, and whether local Nanbeige synthesis ran.
+
+### 21.3 Planned workspace surfaces
+
+1. **Search node** — one or more queries, filters, result normalization, bounded result set.
+2. **Research node** — multi-query/depth/page controls, official/independent/counterevidence lanes, dossier/evidence output.
+3. **Source selector/context node** — select sources, trim excerpts, label evidence, pass packet downstream.
+4. **Run Inspector web pane** — query events, source list, fetch/extraction outcomes, citations, context injection, and approval receipts.
+5. **Library capability rows** — `Search web`, `Extract page`, `Deep research`, `Build context packet`, and `Synthesize evidence`, each with real readiness/disabled reasons.
+6. **Chat/Buzz input bridge** — “Search this” / “Research this” uses the current approved input and keeps transcript/user text provenance visible.
+
+### 21.4 Branch-aware implementation order
+
+- **[NOW] Contract record:** this section is the authoritative web scope for future branches.
+- **[NEXT] Backend adapters:** add loopback SearXNG discovery, bounded native extraction, normalized source/evidence records, and a context-packet builder behind explicit tool schemas.
+- **[NEXT] Runtime integration:** persist web queries, source records, extraction events, selected evidence, context packet metadata, and citations in the durable run context; connect approval decisions and resumable execution.
+- **[NEXT] Frontend:** add Search/Research/Source Context nodes, Library controls, and Run Inspector evidence views.
+- **[NEXT] Functional audit:** exercise search-backend unavailable, result normalization, source selection, robots/private-URL rejection, extraction failure, context trimming, citation preservation, and Nanbeige synthesis/no-fallback paths.
+- **[ACCEPTANCE] Final run:** execute one bounded local SearXNG search, extract at least one selected public source, build a context packet, feed it to a local workflow step, and verify the Run Inspector exposes provenance and citations without logging secrets/raw audio.
+
+### 21.5 Current status
+
+- **Not yet implemented/claimed:** web search node, deep-research node, SearXNG adapter, bounded extraction adapter, durable source/evidence records, context-packet injection, web capability audit, or web acceptance smoke.
+- **Existing research policy:** local SearXNG discovery first, selected native extraction only, RTX 2070 SUPER Nanbeige for downstream synthesis when healthy, no Qwen/coder-model substitution.
+- **Branch rule:** any branch that touches web search, deep research, context injection, Run Inspector, or library capability records must read Sections 19–21 and append its scope/ownership/base SHA/files/verification before editing.
+- **This update:** tracker scope only. No network search, page crawl, model synthesis, service restart, source implementation, branch creation, commit, push, or PR change was performed by this annotation.
+
+## 22. Decompose / Delegate worker node roadmap — 2026-08-07 02:44 CDT
+
+### 22.1 Requested capability
+
+Drew wants a canvas node that can take one larger request, decompose it into useful subtasks, assign those subtasks to an approved worker/agent/persona, and return the child work into the parent workflow with full context and visible results. This is a product workflow capability—not permission for the parent agent to silently spawn arbitrary workers.
+
+### 22.2 Node contract
+
+- **Node name:** `Decompose / Delegate` (working label; final UI label may be `Worker Decomposition`).
+- **Input:** inherited workflow input plus selected context packet, including web evidence, Buzz transcript provenance, prior node outputs, project identity, and explicit user instructions.
+- **Decomposition:** choose bounded strategy: model-assisted plan, fixed checklist, or user-provided subtasks. The node records the decomposition prompt, model/route, output schema, and generated subtask list.
+- **Worker target:** select one approved configured local agent, Hermes skill/agent adapter, or a local model-backed worker profile. No arbitrary command, credential, unregistered plugin, or hidden provider substitution.
+- **Assignment modes:** single worker, parallel fan-out, sequential handoff, round-robin approved pool, or parent-only plan with no dispatch.
+- **Limits:** maximum subtasks, maximum concurrent workers, per-child timeout, retry count, context-character budget, and total child budget are explicit and bounded.
+- **Context:** every child receives a child context packet tagged with `parent_run_id`, `parent_step_id`, `child_run_id`, `subtask_id`, source/provenance IDs, selected web citations, and the exact assignment. Credentials and sensitive stores remain excluded.
+- **Merge:** child results return as ordered results, labeled object, JSON array, first-success, or a model-reduce request subject to the workflow's route and approval policy.
+- **Human review:** creating/dispatching child workers pauses under `preflight`, `per_action`, or `step_through` policy as appropriate. Review shows the subtask list, worker targets, inherited context summary, route, limits, and expected side effects. Approve, edit, deny, cancel, and resume are durable.
+- **Visibility:** the Run Inspector shows decomposition created, each child queued/running/waiting/completed/failed/cancelled, worker/session identity, input-context hash/size, tool/approval events, output preview, failure class, timing, and merge result. Child runs remain linked to the parent until explicit deletion.
+- **No silent autonomy:** an empty worker registry, unavailable Hermes adapter, missing model route, or exceeded budget is a visible `delegate_unavailable`/`delegate_budget_exceeded` result—not a fallback to an unrelated agent.
+
+### 22.3 Planned implementation surfaces
+
+1. `backend/schema.py` — add `delegate` node type and bounded decomposition/assignment settings.
+2. `backend/execution_runtime.py` — persist decomposition records, child lineage, dispatch approvals, bounded scheduling, cancellation, and merge barriers.
+3. `backend/graph.py` — add validated node execution/preflight for the node and preserve legacy graph compatibility.
+4. `backend/hermes_adapter.py` / worker registry — expose only concrete, allowlisted local targets with readiness reasons.
+5. `frontend/components/nodes/DecomposeNode.tsx` — worker/strategy/context/budget/merge controls.
+6. `frontend/components/RunInspector.tsx` — expandable parent/child tree and child context/citation view.
+7. `frontend/components/LibraryPanel.tsx` — show the node as a real canvas capability and expose worker readiness/disabled reasons.
+8. Capability audit — verify no worker option claims ready without a concrete handler and bounded smoke path.
+
+### 22.4 Branch-aware handoff rules
+
+- Any branch touching decomposition, worker dispatch, Hermes adapters, Run Inspector, web context, or graph schemas must read Sections 19–22 first.
+- Before editing, append branch/worktree, base SHA, owner, claimed files, and non-overlap boundaries here or in the next tracker receipt.
+- A worker/agent product node must not be confused with Hermes's own development-worker delegation. The node only dispatches configured product targets after the workflow's review policy permits it.
+- Parent integration remains responsible for reconciling child-run persistence, source context, approvals, API contracts, final acceptance, and PR publication.
+
+### 22.5 Current status
+
+- **Not yet implemented/claimed:** `delegate` schema, node component, child-run persistence, worker target registry UI, decomposition/dispatch API, parent-child Run Inspector tree, or the final worker capability audit.
+- **This update:** tracker scope only. No worker was spawned, no external action occurred, and no source/service/branch/PR mutation was performed by this annotation.
+
+### 21.6 Parent implementation receipt — 2026-08-07 02:57 CDT
+
+- Added `backend/web_research.py` with local SearXNG JSON search, bounded multi-query deep research, public-page extraction, redirect/DNS/private-address/robots/size checks, normalized stable source IDs, and citation-preserving context packets.
+- Registered `search_web`, `extract_web_page`, `deep_research`, and `build_research_context` in `backend/tools.py`, the Library registry, approval catalog, and tool-node execution path.
+- Empty `query`/`context_text` tool arguments inherit the previous workflow output, enabling `input → deep research → cited context → coder` composition.
+- Added `deep-research-context` Library template. Remote page extraction/deep research remain approval-gated; the local search backend reports `search_backend_unavailable` instead of pretending to be ready.
+- **Not yet verified:** live SearXNG availability, page extraction against a selected public source, robots/private URL rejection, source/context packet behavior, library disabled reasons, or downstream local-model use. No network search or model synthesis was run during this implementation receipt.
+
+### 22.6 Parent implementation receipt — 2026-08-07 02:57 CDT
+
+- Added `backend/delegation.py` with bounded checklist/line/paragraph/sentence decomposition, explicit subtask input, plan-only mode, single/sequential/parallel dispatch, max-subtask/max-parallel limits, child IDs, and visible queued/error receipts.
+- Added the `delegate` graph/schema node and `frontend/components/nodes/DecomposeNode.tsx`; wired it into Canvas node types, palette metadata/defaults, CSS accents, graph execution, workflow approval preview, and the `decompose-worker-plan` template.
+- Dispatch is restricted to configured agent targets or explicitly configured `hermes:<skill>` adapters; protected dispatch requires a durable approval. Plan-only mode is safe and does not start workers.
+- **Known boundary:** this first slice records child assignment/queue receipts and returned PIDs/adapter output; durable parent/child run persistence, child completion collection, and expandable Run Inspector lineage remain outstanding and are still tracked in Section 22.
+- **Not yet verified:** graph validation, plan-only execution, approval pause/resume, configured-worker dispatch, UI build, or live worker behavior. No product worker was spawned by this receipt.
+
+## 23. Live deployment checkpoint — 2026-08-07 03:03 CDT
+
+- **User request:** deploy the current workspace live for visual/manual inspection.
+- **Target:** loopback only — frontend `http://127.0.0.1:3000`; backend `http://127.0.0.1:8000`.
+- **Pre-deploy state:** neither port 3000 nor 8000 was listening at checkpoint time. No prior live process needed replacement.
+- **Current worktree:** dirty and intentionally uncommitted; includes sibling-lane runtime/model/plugin/test files in addition to the web-research and delegate changes. No files are being staged or committed by this deployment.
+- **Deployment sequence:** locate the working Python environment, run the frontend production build, start FastAPI without exposing secrets, start Next production server on loopback, verify readiness endpoints, then report the exact URL and any blocker.
+- **Safety boundary:** no public bind, cloud call, model inference, audio capture, worker dispatch, or external send is part of this deploy. SearXNG and remote page retrieval remain user-visible feature actions, not implicit deploy actions.
+- **Status:** superseded by the accepted deployment receipt below; the sibling deployment attempt raced the parent `.next` tree, returned HTTP 500, and exited. It was not accepted as the live build.
+
+### 23.1 Accepted deployment and publication handoff — 2026-08-07 03:11 CDT
+
+- **Accepted frontend:** loopback production server on `http://127.0.0.1:3000`, launched from the isolated verified `.next-hitl` artifact. The rejected sibling listener exited; the accepted root returns HTTP 200.
+- **Accepted backend:** loopback Uvicorn on `http://127.0.0.1:8000`, refreshed after the final managed-runtime tool registration. Health returns HTTP 200.
+- **Acceptance receipts:** backend compilation passed; frontend typecheck passed; isolated production build passed; `git diff --check` passed; credential-value scan found zero matches; seven focused durable-runtime tests passed; one deployed Start→Decompose(plan-only) smoke completed and its retained run was deleted.
+- **Capability state:** durable approvals/run inspection, split/chunk/merge/context/plugin nodes, model endpoint/hardware profiles, governed file mutation, local SearXNG research tools, bounded Decompose/Delegate plan-only execution, and approval-gated app-owned Ollama lifecycle tools are implemented. Device/provider side effects remain unexercised unless explicitly approved/configured.
+- **Rollback:** `.hermes/backups/hitl-predeploy-20260807_030051.zip` preserves the source-only predeployment state; `.hermes/` remains ignored.
+- **Git/PR handoff:** 26 source/test/tracker files are staged on `feat/shared-nanbeige-agentic-workspace`; PR #1 is open but still carries the older 217-resource description. Parent publication is now the only active milestone: restore generated `next-env.d.ts`, commit, push, update the PR body with the verified 227-resource durable-runtime receipts, and verify the remote head.

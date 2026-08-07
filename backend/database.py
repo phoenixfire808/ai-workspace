@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from dotenv import load_dotenv
-from sqlalchemy import DateTime, JSON, String, Text, create_engine, select
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 
@@ -49,6 +49,91 @@ class TaskItem(Base):
     title: Mapped[str] = mapped_column(String(240))
     status: Mapped[str] = mapped_column(String(32), default="todo")
     notes: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class WorkflowRun(Base):
+    __tablename__ = "workflow_runs"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, index=True)
+    project_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    approval_policy: Mapped[str] = mapped_column(String(32), default="per_action")
+    graph_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    runtime_state: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    input_text: Mapped[str] = mapped_column(Text, default="")
+    final_output: Mapped[str] = mapped_column(Text, default="")
+    error_detail: Mapped[str] = mapped_column(Text, default="")
+    retain_context: Mapped[bool] = mapped_column(Boolean, default=True)
+    max_parallel: Mapped[int] = mapped_column(Integer, default=4)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class RunStep(Base):
+    __tablename__ = "run_steps"
+    id: Mapped[str] = mapped_column(String(96), primary_key=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey("workflow_runs.id"), index=True)
+    node_id: Mapped[str] = mapped_column(String(120), index=True)
+    node_type: Mapped[str] = mapped_column(String(32))
+    branch_key: Mapped[str] = mapped_column(String(240), default="root")
+    chunk_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    input_context: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    arguments: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    output: Mapped[str] = mapped_column(Text, default="")
+    failure_class: Mapped[str] = mapped_column(String(120), default="")
+    error_detail: Mapped[str] = mapped_column(Text, default="")
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class RunEvent(Base):
+    __tablename__ = "run_events"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey("workflow_runs.id"), index=True)
+    sequence: Mapped[int] = mapped_column(Integer)
+    event_type: Mapped[str] = mapped_column(String(64), index=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class ApprovalRequest(Base):
+    __tablename__ = "approval_requests"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey("workflow_runs.id"), index=True)
+    step_id: Mapped[str] = mapped_column(ForeignKey("run_steps.id"), index=True)
+    action_type: Mapped[str] = mapped_column(String(80))
+    subject_hash: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    arguments: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    impact_preview: Mapped[str] = mapped_column(Text, default="")
+    note: Mapped[str] = mapped_column(Text, default="")
+    approve_identical: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ModelEndpointProfile(Base):
+    __tablename__ = "model_endpoint_profiles"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), index=True)
+    provider_kind: Mapped[str] = mapped_column(String(64))
+    base_url: Mapped[str] = mapped_column(String(1000))
+    credential_alias: Mapped[str] = mapped_column(String(160), default="")
+    settings: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    managed: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class HardwareProfile(Base):
+    __tablename__ = "hardware_profiles"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), index=True)
+    mode: Mapped[str] = mapped_column(String(32), default="auto")
+    device_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    settings: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
 

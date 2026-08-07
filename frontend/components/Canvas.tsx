@@ -30,11 +30,15 @@ import StartNode from "./nodes/StartNode";
 import TaskNode from "./nodes/TaskNode";
 import ToolNode from "./nodes/ToolNode";
 import RuntimeNode from "./nodes/RuntimeNode";
+import DecomposeNode from "./nodes/DecomposeNode";
+import RunInspector from "./RunInspector";
+import { ChatInputNode, ContextNode, MergeNode, PluginNode, ReviewNode, SplitNode } from "./nodes/WorkflowControlNodes";
 import { NODE_META, nodeDefaults, persistedData, type NodeKind, type WorkspaceNodeData } from "./nodes/types";
 import type { ApprovalPreview, LibraryResource } from "../lib/library-types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 const NODE_MIME = "application/x-mo-node-kind";
+const RESOURCE_MIME = "application/x-mo-library-resource";
 
 type CanvasNode = Node<WorkspaceNodeData, NodeKind>;
 type RunStatus = "idle" | "saving" | "validating" | "running" | "complete" | "error";
@@ -119,6 +123,13 @@ const nodeTypes = {
   agent: AgentNode,
   tool: ToolNode,
   runtime: RuntimeNode,
+  review: ReviewNode,
+  chat: ChatInputNode,
+  split: SplitNode,
+  merge: MergeNode,
+  context: ContextNode,
+  plugin: PluginNode,
+  delegate: DecomposeNode,
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -165,6 +176,9 @@ function serializedGraph(nodes: CanvasNode[], edges: Edge[]) {
       id: edge.id || `${edge.source}-${edge.target}`,
       source: edge.source,
       target: edge.target,
+      label: typeof edge.label === "string" ? edge.label : "",
+      priority: typeof edge.data?.priority === "number" ? edge.data.priority : 0,
+      condition: isRecord(edge.data?.condition) ? edge.data.condition : {},
     })),
   };
 }
@@ -205,6 +219,8 @@ export default function Canvas() {
   const [runLines, setRunLines] = useState<RunLine[]>([]);
   const [health, setHealth] = useState<Health | null>(null);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [approvalPolicy, setApprovalPolicy] = useState<"preflight" | "per_action" | "step_through">("per_action");
   const [leftPanelWidth, setLeftPanelWidth] = useState(DEFAULT_LEFT_PANEL);
   const [rightPanelWidth, setRightPanelWidth] = useState(DEFAULT_RIGHT_PANEL);
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
@@ -330,7 +346,7 @@ export default function Canvas() {
     setNodes((current) => [...current, bindNode(createNode(kind, position ?? fallback))]);
   }, [bindNode, nodes.length, setNodes]);
 
-  const addLibraryResource = useCallback((resource: LibraryResource) => {
+  const addLibraryResource = useCallback((resource: LibraryResource, position?: { x: number; y: number }) => {
     let kind: NodeKind;
     let patch: Record<string, unknown>;
     if (resource.category === "tool") { kind = "tool"; patch = { resource_id: resource.resource_id, label: resource.label, arguments: {} }; }
@@ -339,7 +355,7 @@ export default function Canvas() {
     else if (resource.category === "model") { kind = "coder"; patch = { provider: resource.provider, model: resource.model, label: resource.label }; }
     else if (resource.category === "runtime") { kind = "runtime"; patch = { profile_id: resource.metadata?.profile_id, label: resource.label }; }
     else { setNotice("Use Deploy template for template resources."); return; }
-    const fallback = { x: 180 + (nodes.length % 3) * 300, y: 90 + (nodes.length % 4) * 170 };
+    const fallback = position ?? { x: 180 + (nodes.length % 3) * 300, y: 90 + (nodes.length % 4) * 170 };
     const node = createNode(kind, fallback);
     setNodes((current) => [...current, bindNode({ ...node, data: { ...node.data, ...patch } })]);
     setNotice(`Added ${resource.label} to the canvas.`);
@@ -353,7 +369,9 @@ export default function Canvas() {
         const response = await fetch(`${API_URL}/api/actions/preview`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ resource_id: resource.resource_id, arguments: args }) });
         if (!response.ok) throw new Error(`Action preview failed (${response.status}).`);
         preview = await response.json() as ApprovalPreview;
-        if (preview.requires_approval && !approved) { setPendingApproval({ ...preview, kind: "action", resource, arguments: args }); return; }
+        const normalizedArguments = preview.arguments ?? args;
+        if (preview.requires_approval && !approved) { setPendingApproval({ ...preview, kind: "action", resource, arguments: normalizedArguments }); return; }
+        args = normalizedArguments;
       }
       setNotice(`Running ${resource.label}…`);
       const response = await fetch(`${API_URL}/api/actions/run`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ resource_id: resource.resource_id, arguments: args, preview_id: preview.preview_id, approved }) });
@@ -381,20 +399,24 @@ export default function Canvas() {
 
   const onDrop = useCallback((event: DragEvent) => {
     event.preventDefault();
+    const resourceJson = event.dataTransfer.getData(RESOURCE_MIME);
+    if (resourceJson && flowInstance) {
+      try {
+        const resource = JSON.parse(resourceJson) as LibraryResource;
+        addLibraryResource(resource, flowInstance.screenToFlowPosition({ x: event.clientX, y: event.clientY }));
+        return;
+      } catch { setNotice("The dragged library resource was invalid."); return; }
+    }
     const kind = event.dataTransfer.getData(NODE_MIME);
     if (!flowInstance || !isNodeKind(kind)) return;
     const position = flowInstance.screenToFlowPosition({ x: event.clientX, y: event.clientY });
     addNodeToCanvas(kind, position);
-  }, [addNodeToCanvas, flowInstance]);
+  }, [addLibraryResource, addNodeToCanvas, flowInstance]);
 
   const onConnect = useCallback((connection: Connection) => {
     if (!connection.source || !connection.target) return;
     if (connection.source === connection.target) {
       setNotice("A node cannot connect to itself.");
-      return;
-    }
-    if (edges.some((edge) => edge.source === connection.source)) {
-      setNotice("Branching is not enabled yet; each node can have one output.");
       return;
     }
     setEdges((current) =>
@@ -407,7 +429,7 @@ export default function Canvas() {
         current,
       ),
     );
-  }, [edges, setEdges]);
+  }, [setEdges]);
 
   const saveWorkspace = useCallback(async () => {
     setRunStatus("saving");
@@ -487,84 +509,42 @@ export default function Canvas() {
   const executeWorkspace = useCallback(async (approvalPreviewId?: string) => {
     const graph = serializedGraph(nodes as CanvasNode[], edges);
     try {
-      if (!approvalPreviewId) {
+      if (approvalPolicy === "preflight" && !approvalPreviewId) {
         const previewResponse = await fetch(`${API_URL}/api/templates/preview-run`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ graph }) });
         if (!previewResponse.ok) throw new Error(`Workflow review failed (${previewResponse.status}).`);
         const preview = await previewResponse.json() as ApprovalPreview;
         if (preview.requires_approval) { setPendingApproval({ ...preview, kind: "graph" }); return; }
         approvalPreviewId = preview.preview_id;
       }
-    } catch (error) { setRunStatus("error"); setNotice(displayError(error)); return; }
-    setRunStatus("running");
-    setOutput("");
-    setRunLines([{ id: `run-${Date.now()}`, kind: "system", text: "Opening LangGraph execution stream…" }]);
-    setNotice("Running workflow…");
-    try {
-      const response = await fetch(`${API_URL}/api/execute`, {
+      setRunStatus("running");
+      setOutput("");
+      setRunLines([{ id: `run-${Date.now()}`, kind: "system", text: "Creating durable local run…" }]);
+      setNotice("Starting durable workflow…");
+      const response = await fetch(`${API_URL}/api/runs`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-        body: JSON.stringify({
-          graph,
-          input_text: inputText,
-          approval_preview_id: approvalPreviewId,
-          ...(projectId ? { project_id: projectId } : {}),
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ graph, input_text: inputText, approval_preview_id: approvalPreviewId, approval_policy: approvalPolicy, retain_context: true, max_parallel: 4, ...(projectId ? { project_id: projectId } : {}) }),
       });
-      if (!response.ok) {
-        const data = (await response.json().catch(() => ({}))) as {
-          detail?: { errors?: string[]; detail?: string; failure_class?: string } | string;
-        };
-        const detail = typeof data.detail === "string"
-          ? data.detail
-          : data.detail?.errors?.join("; ") ?? data.detail?.detail ?? "Workflow execution failed.";
-        const failureClass = typeof data.detail === "object" ? data.detail.failure_class : undefined;
-        throw new Error(failureClass ? `${detail} (${failureClass})` : detail);
+      const payload = await response.json() as { id?: string; status?: string; final_output?: string; detail?: string | { errors?: string[] } };
+      if (!response.ok || !payload.id) {
+        const detail = typeof payload.detail === "string" ? payload.detail : payload.detail?.errors?.join("; ") ?? `Workflow start failed (${response.status}).`;
+        throw new Error(detail);
       }
-      if (!response.body) throw new Error("The SSE response did not contain a body.");
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      const handleMessage = (message: SseMessage | null) => {
-        if (!message) return;
-        const data = message.data;
-        if (message.event === "run_started") {
-          setRunLines((current) => [...current, { id: String(data.run_id), kind: "system", text: `Run ${String(data.run_id).slice(0, 8)} started.` }]);
-        } else if (message.event === "node") {
-          setRunLines((current) => [
-            ...current,
-            {
-              id: `${String(data.run_id)}-${String(data.node_id)}-${String(data.duration_ms)}-${current.length}`,
-              kind: data.status === "error" ? "error" : "node",
-              text: `${String(data.node_type)} · ${String(data.status)} · ${String(data.duration_ms)} ms${data.failure_class ? ` · ${String(data.failure_class)}` : ""}`,
-            },
-          ]);
-        } else if (message.event === "error") {
-          setRunStatus("error");
-          setNotice(String(data.detail ?? "Workflow execution failed."));
-          setRunLines((current) => [...current, { id: `error-${current.length}`, kind: "error", text: String(data.detail ?? "Workflow execution failed.") }]);
-        } else if (message.event === "complete") {
-          setOutput(String(data.output ?? ""));
-          setRunStatus("complete");
-          setNotice("Workflow completed.");
-          setRunLines((current) => [...current, { id: `complete-${current.length}`, kind: "complete", text: "Workflow completed." }]);
-        }
-      };
-      let buffer = "";
-      let done = false;
-      while (!done) {
-        const chunk = await reader.read();
-        done = chunk.done;
-        buffer += decoder.decode(chunk.value, { stream: !done }).replace(/\r\n/g, "\n");
-        const blocks = buffer.split("\n\n");
-        buffer = blocks.pop() ?? "";
-        for (const block of blocks) handleMessage(parseSseBlock(block));
-      }
-      if (buffer.trim()) handleMessage(parseSseBlock(buffer));
+      setActiveRunId(payload.id);
+      setRunLines((current) => [...current, { id: payload.id!, kind: "system", text: `Durable run ${payload.id!.slice(0, 8)} · ${payload.status ?? "queued"}.` }]);
+      setNotice(payload.status === "waiting_approval" || payload.status === "waiting_input" ? "Run is waiting in the Human-in-the-loop inspector." : "Run started; context is retained locally.");
     } catch (error) {
       setRunStatus("error");
       setNotice(displayError(error));
       setRunLines((current) => [...current, { id: `error-${current.length}`, kind: "error", text: displayError(error) }]);
     }
-  }, [edges, inputText, nodes, projectId]);
+  }, [approvalPolicy, edges, inputText, nodes, projectId]);
+
+  const handleDurableRunStatus = useCallback((value: string) => {
+    if (value === "completed") { setRunStatus("complete"); setNotice("Workflow completed; full run context is retained locally."); }
+    else if (value === "error" || value === "denied" || value === "cancelled") { setRunStatus("error"); setNotice(`Workflow ${value}.`); }
+    else { setRunStatus("running"); setNotice(value === "waiting_approval" || value === "waiting_input" ? "Workflow is waiting for human input." : "Workflow is running."); }
+  }, []);
 
   const statusLabel = useMemo(() => {
     if (runStatus === "running") return "RUNNING";
@@ -701,11 +681,15 @@ export default function Canvas() {
           <div className="panel-heading"><div><span className="eyebrow">RUN CONTROL</span><h2>Input / output</h2></div><span className={`status-badge status-${runStatus}`}>{statusLabel}</span></div>
           <label className="control-label" htmlFor="workflow-input">Workflow input</label>
           <textarea id="workflow-input" className="control-textarea" value={inputText} onChange={(event) => setInputText(event.target.value)} rows={7} />
+          <label className="control-label" htmlFor="approval-policy">Human-in-the-loop policy</label>
+          <select id="approval-policy" className="control-select" value={approvalPolicy} onChange={(event) => setApprovalPolicy(event.target.value as typeof approvalPolicy)}><option value="preflight">Review protected actions before run</option><option value="per_action">Pause before each protected action</option><option value="step_through">Step through every node</option></select>
           <div className="control-actions"><button className="button button-primary full-width" type="button" onClick={() => void executeWorkspace()}>Execute Flow <span className="button-arrow">↗</span></button><button className="button button-quiet full-width" type="button" onClick={() => void validateWorkspace()}>Validate graph</button></div>
           <div className="panel-divider" />
           <div className="output-heading"><span className="eyebrow">FINAL OUTPUT</span><span className="output-lock">Local</span></div>
           <pre className="output-box">{output || "Output from the last run will appear here."}</pre>
           <div className="notice-box"><span className="notice-icon">i</span><span>{notice}</span></div>
+          <div className="panel-divider" />
+          <RunInspector activeRunId={activeRunId} onOutput={setOutput} onRunStatus={handleDurableRunStatus} />
           <div className="panel-divider" />
           <div className="mini-section-title">RUNTIME READINESS</div>
           <div className="readiness-list">

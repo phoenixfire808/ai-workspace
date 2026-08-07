@@ -1,6 +1,7 @@
 import type { NodeProps } from "@xyflow/react";
 import NodeFrame, { NodeField } from "./NodeFrame";
 import type { WorkspaceNode } from "./types";
+import ModelRouteSettings from "../ModelRouteSettings";
 
 export default function PlannerNode({ data }: NodeProps<WorkspaceNode>) {
   const onChange = data.onChange;
@@ -25,6 +26,17 @@ export default function PlannerNode({ data }: NodeProps<WorkspaceNode>) {
           onChange={(event) => onChange?.({ max_tokens: Number(event.target.value) })}
         />
       </NodeField>
+      <NodeField label="Planning mode">
+        <select className="node-input nodrag" value={String(data.planning_mode ?? "implementation")} onChange={(event) => onChange?.({ planning_mode: event.target.value })}>
+          <option value="implementation">Implementation plan</option><option value="routing">Routing decision</option><option value="decomposition">Task decomposition</option><option value="review">Review and risks</option>
+        </select>
+      </NodeField>
+      <NodeField label="Tool access">
+        <select className="node-input nodrag" value={String(data.tool_access ?? "none")} onChange={(event) => onChange?.({ tool_access: event.target.value })}>
+          <option value="none">No tools</option><option value="read_only">Read-only tools</option><option value="approved">Approved governed tools</option>
+        </select>
+      </NodeField>
+      <ModelRouteSettings data={data} />
       <div className="node-note">Uses the explicit local Nanbeige route. Planner output is passed to the next node; raw run logs stay metadata-only.</div>
     </NodeFrame>
   );

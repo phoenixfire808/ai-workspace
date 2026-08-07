@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import ast
+import difflib
+import hashlib
 import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +20,8 @@ from .hermes_adapter import (
     HERMES_TOOL_NAMES,
     HERMES_TOOLS,
 )
+from .web_research import WEB_APPROVAL_REQUIRED_TOOLS, WEB_TOOL_CATALOG, WEB_TOOL_NAMES, WEB_TOOLS
+from .model_runtime import load_model, start_managed_instance, stop_managed_instance, unload_model
 
 
 MAX_SCRIPT_CHARS = 12_000
@@ -142,6 +147,43 @@ class AstInspectInput(WorkspacePathInput):
     pass
 
 
+class CreateWorkspaceFileInput(WorkspacePathInput):
+    content: str = Field(default="", max_length=MAX_FILE_CHARS)
+    expected_absent: bool = True
+
+
+class PatchWorkspaceFileInput(WorkspacePathInput):
+    old_text: str = Field(min_length=1, max_length=MAX_FILE_CHARS)
+    new_text: str = Field(default="", max_length=MAX_FILE_CHARS)
+    replace_all: bool = False
+    expected_sha256: str = Field(min_length=64, max_length=64)
+
+
+class RenameWorkspaceFileInput(BaseModel):
+    source_path: str = Field(min_length=1, max_length=500)
+    destination_path: str = Field(min_length=1, max_length=500)
+    expected_sha256: str = Field(min_length=64, max_length=64)
+
+
+class DeleteWorkspaceFileInput(WorkspacePathInput):
+    expected_sha256: str = Field(min_length=64, max_length=64)
+
+
+class ManagedRuntimeInput(BaseModel):
+    profile_id: str = Field(min_length=1, max_length=120)
+    port: int = Field(default=11435, ge=1024, le=65535)
+
+
+class ManagedRuntimeStopInput(BaseModel):
+    profile_id: str = Field(min_length=1, max_length=120)
+
+
+class ManagedModelInput(BaseModel):
+    profile_id: str = Field(min_length=1, max_length=120)
+    model: str = Field(min_length=1, max_length=300)
+    keep_alive: str = Field(default="5m", max_length=32)
+
+
 def _is_sensitive_path(path: Path) -> bool:
     for part in path.parts:
         lowered = part.lower()
@@ -181,6 +223,74 @@ def _bounded(value: Any) -> str:
     if len(text) <= MAX_OUTPUT_CHARS:
         return text
     return f"{text[:MAX_OUTPUT_CHARS]}\n[output truncated]"
+
+
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _atomic_text_write(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", newline="", delete=False, dir=path.parent, prefix=f".{path.name}.", suffix=".tmp") as handle:
+        handle.write(content)
+        temporary = Path(handle.name)
+    try:
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def preview_workspace_mutation(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    if name == "create_workspace_file":
+        path = _safe_workspace_path(str(arguments.get("relative_path", "")))
+        if path.exists():
+            raise ValueError("destination already exists")
+        content = str(arguments.get("content", ""))[:MAX_FILE_CHARS]
+        diff = "".join(difflib.unified_diff([], content.splitlines(True), fromfile="/dev/null", tofile=_relative_workspace_path(path)))
+        return {"operation": "create", "path": _relative_workspace_path(path), "expected_absent": True, "diff": diff[:MAX_OUTPUT_CHARS]}
+    if name == "patch_workspace_file":
+        path = _safe_workspace_path(str(arguments.get("relative_path", "")), require_file=True)
+        before = path.read_text(encoding="utf-8")
+        old = str(arguments.get("old_text", ""))
+        count = before.count(old)
+        if not old or count == 0:
+            raise ValueError("old_text was not found")
+        if count > 1 and not bool(arguments.get("replace_all")):
+            raise ValueError("old_text is not unique; set replace_all explicitly")
+        after = before.replace(old, str(arguments.get("new_text", "")), -1 if arguments.get("replace_all") else 1)
+        diff = "".join(difflib.unified_diff(before.splitlines(True), after.splitlines(True), fromfile=_relative_workspace_path(path), tofile=_relative_workspace_path(path)))
+        return {"operation": "patch", "path": _relative_workspace_path(path), "expected_sha256": _file_sha256(path), "diff": diff[:MAX_OUTPUT_CHARS]}
+    if name == "rename_workspace_file":
+        source = _safe_workspace_path(str(arguments.get("source_path", "")), require_file=True)
+        destination = _safe_workspace_path(str(arguments.get("destination_path", "")))
+        if destination.exists():
+            raise ValueError("destination already exists")
+        return {"operation": "rename", "path": _relative_workspace_path(source), "destination": _relative_workspace_path(destination), "expected_sha256": _file_sha256(source), "diff": f"rename {_relative_workspace_path(source)} -> {_relative_workspace_path(destination)}"}
+    if name == "delete_workspace_file":
+        path = _safe_workspace_path(str(arguments.get("relative_path", "")), require_file=True)
+        before = path.read_text(encoding="utf-8")
+        diff = "".join(difflib.unified_diff(before.splitlines(True), [], fromfile=_relative_workspace_path(path), tofile="/dev/null"))
+        return {"operation": "delete", "path": _relative_workspace_path(path), "expected_sha256": _file_sha256(path), "diff": diff[:MAX_OUTPUT_CHARS]}
+    raise ValueError("unknown workspace mutation")
+
+
+def preview_workspace_write(relative_path: str, content: str) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    path = _safe_workspace_path(relative_path)
+    if not path.exists():
+        arguments: dict[str, Any] = {"relative_path": relative_path, "content": content}
+        impact = preview_workspace_mutation("create_workspace_file", arguments)
+        arguments["expected_absent"] = True
+        return "create_workspace_file", arguments, impact
+    if not path.is_file():
+        raise ValueError("workspace write target must be a regular file")
+    try:
+        old_text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise ValueError("workspace write target must be UTF-8 text") from exc
+    arguments = {"relative_path": relative_path, "old_text": old_text, "new_text": content, "replace_all": False}
+    impact = preview_workspace_mutation("patch_workspace_file", arguments)
+    arguments["expected_sha256"] = impact["expected_sha256"]
+    return "patch_workspace_file", arguments, impact
 
 
 def _validate_script(script_content: str) -> None:
@@ -326,6 +436,77 @@ def execute_python_sandbox(script_content: str) -> str:
         return f"System Error: Failed to execute script natively: {type(exc).__name__}"
 
 
+@tool("create_workspace_file", args_schema=CreateWorkspaceFileInput)
+def create_workspace_file(relative_path: str, content: str = "", expected_absent: bool = True) -> str:
+    """Create a bounded text file after exact approval review."""
+    path = _safe_workspace_path(relative_path)
+    if not expected_absent or path.exists():
+        raise ValueError("destination existence changed after preview")
+    _atomic_text_write(path, content[:MAX_FILE_CHARS])
+    return f"Created {_relative_workspace_path(path)}"
+
+
+@tool("patch_workspace_file", args_schema=PatchWorkspaceFileInput)
+def patch_workspace_file(relative_path: str, old_text: str, new_text: str = "", replace_all: bool = False, expected_sha256: str = "") -> str:
+    """Patch exact text in a workspace file after hash-bound approval."""
+    path = _safe_workspace_path(relative_path, require_file=True)
+    if _file_sha256(path) != expected_sha256:
+        raise ValueError("workspace file changed after preview")
+    before = path.read_text(encoding="utf-8")
+    count = before.count(old_text)
+    if count == 0 or (count > 1 and not replace_all):
+        raise ValueError("approved patch no longer matches uniquely")
+    _atomic_text_write(path, before.replace(old_text, new_text, -1 if replace_all else 1))
+    return f"Patched {_relative_workspace_path(path)}"
+
+
+@tool("rename_workspace_file", args_schema=RenameWorkspaceFileInput)
+def rename_workspace_file(source_path: str, destination_path: str, expected_sha256: str) -> str:
+    """Rename a workspace file after hash-bound approval."""
+    source = _safe_workspace_path(source_path, require_file=True)
+    destination = _safe_workspace_path(destination_path)
+    if _file_sha256(source) != expected_sha256 or destination.exists():
+        raise ValueError("workspace state changed after preview")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(source, destination)
+    return f"Renamed {_relative_workspace_path(source)} to {_relative_workspace_path(destination)}"
+
+
+@tool("delete_workspace_file", args_schema=DeleteWorkspaceFileInput)
+def delete_workspace_file(relative_path: str, expected_sha256: str) -> str:
+    """Delete a workspace file after hash-bound approval."""
+    path = _safe_workspace_path(relative_path, require_file=True)
+    if _file_sha256(path) != expected_sha256:
+        raise ValueError("workspace file changed after preview")
+    path.unlink()
+    return f"Deleted {_relative_workspace_path(path)}"
+
+
+@tool("start_managed_ollama", args_schema=ManagedRuntimeInput)
+def start_managed_ollama(profile_id: str, port: int = 11435) -> str:
+    """Start one explicitly selected app-owned loopback Ollama instance after approval."""
+    return json.dumps(start_managed_instance(profile_id, port=port), ensure_ascii=False)
+
+
+@tool("stop_managed_ollama", args_schema=ManagedRuntimeStopInput)
+def stop_managed_ollama(profile_id: str) -> str:
+    """Stop only the app-owned managed Ollama instance for the selected profile."""
+    return json.dumps(stop_managed_instance(profile_id), ensure_ascii=False)
+
+
+@tool("preload_managed_model", args_schema=ManagedModelInput)
+def preload_managed_model(profile_id: str, model: str, keep_alive: str = "5m") -> str:
+    """Load an exact model into an app-owned managed Ollama instance after approval."""
+    return json.dumps(load_model(profile_id, model, keep_alive=keep_alive), ensure_ascii=False)
+
+
+@tool("unload_managed_model", args_schema=ManagedModelInput)
+def unload_managed_model(profile_id: str, model: str, keep_alive: str = "0") -> str:
+    """Unload an exact model from an app-owned managed Ollama instance after approval."""
+    del keep_alive
+    return json.dumps(unload_model(profile_id, model), ensure_ascii=False)
+
+
 WORKSPACE_TOOL_CATALOG = [
     {
         "name": "list_workspace_files",
@@ -351,16 +532,34 @@ WORKSPACE_TOOL_CATALOG = [
         "requires_approval": True,
         "scope": "workspace",
     },
+    {"name": "create_workspace_file", "description": "Create a text file with exact diff review.", "requires_approval": True, "scope": "workspace-write"},
+    {"name": "patch_workspace_file", "description": "Patch exact text with diff and stale-preimage protection.", "requires_approval": True, "scope": "workspace-write"},
+    {"name": "rename_workspace_file", "description": "Rename a file with source hash and destination checks.", "requires_approval": True, "scope": "workspace-write"},
+    {"name": "delete_workspace_file", "description": "Delete a text file with exact diff and stale-preimage protection.", "requires_approval": True, "scope": "workspace-write"},
+    {"name": "start_managed_ollama", "description": "Start one selected app-owned loopback Ollama instance.", "requires_approval": True, "scope": "managed-runtime"},
+    {"name": "stop_managed_ollama", "description": "Stop only one app-owned managed Ollama instance.", "requires_approval": True, "scope": "managed-runtime"},
+    {"name": "preload_managed_model", "description": "Load an exact model into an approved managed runtime.", "requires_approval": True, "scope": "managed-runtime"},
+    {"name": "unload_managed_model", "description": "Unload an exact model from an approved managed runtime.", "requires_approval": True, "scope": "managed-runtime"},
 ]
 WORKSPACE_TOOL_CATALOG.extend(HERMES_TOOL_CATALOG)
-WORKSPACE_TOOL_NAMES = {item["name"] for item in WORKSPACE_TOOL_CATALOG} | HERMES_TOOL_NAMES
+WORKSPACE_TOOL_CATALOG.extend(WEB_TOOL_CATALOG)
+WORKSPACE_TOOL_NAMES = {item["name"] for item in WORKSPACE_TOOL_CATALOG} | HERMES_TOOL_NAMES | WEB_TOOL_NAMES
 APPROVAL_REQUIRED_TOOLS = {
     item["name"] for item in WORKSPACE_TOOL_CATALOG if item["requires_approval"]
-} | HERMES_APPROVAL_REQUIRED_TOOLS
+} | HERMES_APPROVAL_REQUIRED_TOOLS | WEB_APPROVAL_REQUIRED_TOOLS
 WORKSPACE_TOOLS = [
     list_workspace_files,
     read_workspace_file,
     inspect_python_ast,
     execute_python_sandbox,
+    create_workspace_file,
+    patch_workspace_file,
+    rename_workspace_file,
+    delete_workspace_file,
+    start_managed_ollama,
+    stop_managed_ollama,
+    preload_managed_model,
+    unload_managed_model,
     *HERMES_TOOLS,
+    *WEB_TOOLS,
 ]

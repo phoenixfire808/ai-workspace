@@ -16,13 +16,16 @@ from langgraph.graph.state import CompiledStateGraph
 
 from .agent_engine import DEFAULT_LFM_BASE_URL, DEFAULT_LFM_MODEL
 from .database import SessionLocal, upsert_task
+from .delegation import DelegationError, plan_or_dispatch
+from .hermes_adapter import dispatch_hermes_skill
 from .ollama_control import DEFAULT_OLLAMA_MODEL, preflight_ollama_model
 from .runtime_control import preflight_runtime_profile
+from .model_profiles import generate_with_endpoint
 from .schema import GraphDocument, GraphNode
 from .tools import WORKSPACE_TOOL_CATALOG, WORKSPACE_TOOLS
 
 
-SUPPORTED_NODE_TYPES = {"start", "buzz", "planner", "coder", "file", "task", "agent", "tool", "runtime"}
+SUPPORTED_NODE_TYPES = {"start", "buzz", "planner", "coder", "file", "task", "agent", "tool", "runtime", "review", "chat", "split", "merge", "context", "plugin", "delegate"}
 ALLOWED_AUDIO_SUFFIXES = {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".aac", ".webm"}
 ALLOWED_BUZZ_MODEL_SIZES = {"tiny", "base", "small", "medium", "large", "large-v2", "large-v3"}
 MAX_FILE_CHARS = 200_000
@@ -96,12 +99,6 @@ def validate_graph(graph: GraphDocument | dict[str, Any]) -> dict[str, Any]:
             errors.append(f"edge {edge.id} cannot connect a node to itself")
         outgoing[edge.source].append(edge.target)
         incoming[edge.target].append(edge.source)
-
-    # The first slice is deliberately linear. It keeps execution order obvious while the
-    # persisted edge format remains compatible with future branch/merge support.
-    for source, targets in outgoing.items():
-        if len(targets) > 1:
-            errors.append(f"node {source} has multiple outputs; branching is not enabled in the MVP")
 
     if not errors:
         indegree = {node_id: len(incoming[node_id]) for node_id in id_set}
@@ -510,6 +507,14 @@ def _ollama_output(prompt: str, data: dict[str, Any]) -> str:
 
 
 def _model_output(prompt: str, data: dict[str, Any]) -> str:
+    endpoint_profile = str(data.get("endpoint_profile") or "").strip()
+    if endpoint_profile:
+        try:
+            return generate_with_endpoint(endpoint_profile, model=str(data.get("model") or ""), prompt=prompt, system_prompt=str(data.get("system_prompt") or ""), settings=data)
+        except KeyError as exc:
+            raise NodeExecutionError("the selected endpoint profile is not registered", "endpoint_profile_unknown") from exc
+        except (RuntimeError, ValueError) as exc:
+            raise NodeExecutionError("the selected endpoint could not generate a response", "endpoint_generation_failed") from exc
     provider = str(data.get("provider") or os.getenv("WORKSPACE_MODEL_PROVIDER", "ollama")).strip().lower()
     if provider == "nanbeige":
         return _nanbeige_output(prompt, data)
@@ -531,7 +536,7 @@ def _planner_output(prompt: str, data: dict[str, Any]) -> str:
         "enable_thinking": False,
         "max_tokens": min(int(data.get("max_tokens", 4096)), 4096),
     }
-    return _nanbeige_output(prompt, planner_data)
+    return _model_output(prompt, planner_data)
 
 
 def _configured_agent_commands() -> dict[str, list[str]]:
@@ -578,6 +583,29 @@ def trigger_agent(target: str, prompt: str, root: Path) -> int:
         raise NodeExecutionError("the configured local agent could not be started", "agent_start_failed") from exc
 
 
+def _delegate_node(node: GraphNode, state: AgentState, context: ExecutionContext) -> str:
+    data = node.data
+    mode = str(data.get("dispatch_mode") or "plan_only").strip().lower()
+    if mode != "plan_only" and not ({f"delegate:{node.id}", "step_review"} & context.approved_resources):
+        raise NodeExecutionError("worker dispatch requires approval review", "approval_required")
+    try:
+        result = plan_or_dispatch(
+            _current_input(state),
+            strategy=str(data.get("decompose_strategy") or "checklist"),
+            explicit=data.get("subtasks"),
+            max_subtasks=int(data.get("max_subtasks", 8)),
+            worker_target=str(data.get("worker_target") or data.get("target") or ""),
+            mode=mode,
+            context=_current_input(state),
+            max_parallel=int(data.get("max_parallel", 4)),
+            dispatch_agent=lambda target, prompt: trigger_agent(target, prompt, context.workspace_root),
+            dispatch_hermes=lambda skill, prompt: dispatch_hermes_skill.invoke({"skill_name": skill, "prompt": prompt}),
+        )
+    except DelegationError as exc:
+        raise NodeExecutionError(exc.detail, exc.failure_class) from exc
+    return json.dumps(result, ensure_ascii=False)[:MAX_FILE_CHARS]
+
+
 def _task_node(node: GraphNode, state: AgentState, context: ExecutionContext) -> str:
     data = node.data
     title = str(data.get("title") or _current_input(state)[:240] or "Untitled task")[:240]
@@ -598,7 +626,7 @@ def _task_node(node: GraphNode, state: AgentState, context: ExecutionContext) ->
     return f"Task updated: {title} ({status})"
 
 
-def _tool_node(node: GraphNode, context: ExecutionContext) -> str:
+def _tool_node(node: GraphNode, state: AgentState, context: ExecutionContext) -> str:
     resource_id = str(node.data.get("resource_id") or "")
     if not resource_id.startswith("tool:"):
         raise NodeExecutionError("a governed tool resource is required", "tool_resource_invalid")
@@ -611,9 +639,14 @@ def _tool_node(node: GraphNode, context: ExecutionContext) -> str:
         raise NodeExecutionError("the selected tool is not allowlisted", "tool_not_allowlisted")
     if item.get("requires_approval") and resource_id not in context.approved_resources:
         raise NodeExecutionError("the selected tool requires approval review", "approval_required")
-    arguments = node.data.get("arguments") or {}
-    if not isinstance(arguments, dict):
+    raw_arguments = node.data.get("arguments") or {}
+    if not isinstance(raw_arguments, dict):
         raise NodeExecutionError("tool arguments must be an object", "tool_arguments_invalid")
+    arguments = dict(raw_arguments)
+    if name in {"search_web", "deep_research"} and not str(arguments.get("query") or "").strip():
+        arguments["query"] = _current_input(state)
+    if name == "build_research_context" and not arguments.get("sources") and not str(arguments.get("context_text") or "").strip():
+        arguments["context_text"] = _current_input(state)
     try:
         return str(tool.invoke(arguments))[:MAX_FILE_CHARS]
     except Exception as exc:
@@ -677,8 +710,10 @@ def _execute_node(node: GraphNode, state: AgentState, context: ExecutionContext)
             prompt = f"{prefix}\n\n{prompt}"
         pid = trigger_agent(target, prompt, context.workspace_root)
         return f"Started local agent '{target}' (pid {pid})"
+    if node.type == "delegate":
+        return _delegate_node(node, state, context)
     if node.type == "tool":
-        return _tool_node(node, context)
+        return _tool_node(node, state, context)
     if node.type == "runtime":
         return _runtime_node(node)
     raise NodeExecutionError("node type is not executable", "node_type_invalid")

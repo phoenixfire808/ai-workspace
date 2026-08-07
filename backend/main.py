@@ -36,16 +36,39 @@ from .graph import (
     stream_graph,
     validate_graph,
 )
-from .schema import ChatStreamPayload, ProjectPayload, RunPayload, ValidationPayload
+from .schema import ChatStreamPayload, ProjectPayload, RunChatPayload, RunDecisionPayload, RunPayload, ValidationPayload
+from .execution_runtime import (
+    cancel_run,
+    create_run,
+    decide_run,
+    delete_run,
+    events_after,
+    get_run,
+    list_runs,
+)
 from .runtime_control import list_runtime_profiles, preflight_runtime_profile
+from .plugins import plugin_catalog
 from .terminal_control import TerminalPreviewRequest, preview_terminal_command
 from .upgrade_control import upgrade_inventory, upgrade_preflight
 from .ollama_control import OllamaPreflightPayload, list_ollama_models, preflight_ollama_model
+from .model_profiles import (
+    EndpointProfilePayload,
+    HardwareProfilePayload,
+    delete_endpoint_profile,
+    gpu_inventory,
+    list_endpoint_profiles,
+    list_hardware_profiles,
+    managed_ollama_launch_spec,
+    preflight_endpoint,
+    save_endpoint_profile,
+    save_hardware_profile,
+)
 from .library import (
     ActionPreviewPayload,
     ActionRunPayload,
     GraphApprovalPayload,
     TemplateInstantiatePayload,
+    capability_audit,
     consume_graph_preview,
     get_resource,
     instantiate_template,
@@ -72,7 +95,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["Content-Type"],
 )
 
@@ -168,6 +191,16 @@ def library(category: str | None = None, query: str | None = None, limit: int = 
     return query_library(category=category, query=query, limit=limit, offset=offset)
 
 
+@app.get("/api/library/capability-audit")
+def library_capability_audit() -> dict[str, Any]:
+    return capability_audit()
+
+
+@app.get("/api/plugins")
+def plugins() -> dict[str, Any]:
+    return {"plugins": plugin_catalog(), "mutation": "none"}
+
+
 @app.get("/api/library/{resource_id:path}")
 def library_resource(resource_id: str) -> dict[str, Any]:
     try:
@@ -240,6 +273,66 @@ def runtime_profile_preflight(profile_id: str) -> dict[str, Any]:
     return preflight_runtime_profile(profile_id)
 
 
+@app.get("/api/model-endpoints")
+def model_endpoint_profiles(readiness: bool = False) -> dict[str, Any]:
+    return {"profiles": list_endpoint_profiles(include_readiness=readiness)}
+
+
+@app.post("/api/model-endpoints")
+def model_endpoint_save(payload: EndpointProfilePayload) -> dict[str, Any]:
+    try:
+        return save_endpoint_profile(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/model-endpoints/{profile_id}/preflight")
+def model_endpoint_preflight(profile_id: str) -> dict[str, Any]:
+    try:
+        return preflight_endpoint(profile_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Endpoint profile not found") from exc
+
+
+@app.delete("/api/model-endpoints/{profile_id}")
+def model_endpoint_delete(profile_id: str) -> dict[str, str]:
+    try:
+        delete_endpoint_profile(profile_id)
+        return {"status": "deleted", "profile_id": profile_id}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Endpoint profile not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/api/hardware/gpus")
+def hardware_gpus() -> dict[str, Any]:
+    return {"devices": gpu_inventory(), "mutation": "none"}
+
+
+@app.get("/api/hardware/profiles")
+def hardware_profiles() -> dict[str, Any]:
+    return {"profiles": list_hardware_profiles()}
+
+
+@app.post("/api/hardware/profiles")
+def hardware_profile_save(payload: HardwareProfilePayload) -> dict[str, Any]:
+    try:
+        return save_hardware_profile(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/hardware/profiles/{profile_id}/ollama-launch-preview")
+def hardware_profile_launch_preview(profile_id: str, port: int) -> dict[str, Any]:
+    try:
+        return managed_ollama_launch_spec(profile_id, port)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Hardware profile not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/terminal/preview")
 def terminal_preview(payload: TerminalPreviewRequest) -> dict[str, Any]:
     """Classify a bounded terminal request; no command execution is exposed here."""
@@ -290,6 +383,115 @@ def validate_workflow(payload: ValidationPayload) -> dict[str, Any]:
         return validate_graph(payload.graph)
     except GraphValidationError as exc:
         raise HTTPException(status_code=400, detail={"errors": exc.errors}) from exc
+
+
+@app.post("/api/runs")
+def create_durable_run(payload: RunPayload) -> dict[str, Any]:
+    try:
+        approved_resources = consume_graph_preview(payload.approval_preview_id, payload.graph) if payload.approval_policy == "preflight" else set()
+        return create_run(payload, WORKSPACE_ROOT, approved_resources)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except GraphValidationError as exc:
+        raise HTTPException(status_code=400, detail={"errors": exc.errors}) from exc
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/runs")
+def durable_runs(project_id: str | None = None, limit: int = 100) -> dict[str, Any]:
+    return {"runs": list_runs(project_id=project_id, limit=limit)}
+
+
+@app.get("/api/runs/{run_id}")
+def durable_run(run_id: str) -> dict[str, Any]:
+    try:
+        return get_run(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Run not found") from exc
+
+
+@app.get("/api/runs/{run_id}/events")
+def durable_run_events(run_id: str, after: int = 0) -> dict[str, Any]:
+    try:
+        return {"events": events_after(run_id, after)}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Run not found") from exc
+
+
+@app.get("/api/runs/{run_id}/stream")
+async def durable_run_stream(run_id: str, after: int = 0) -> EventSourceResponse:
+    try:
+        get_run(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Run not found") from exc
+
+    async def event_stream():
+        cursor = max(after, 0)
+        while True:
+            batch = events_after(run_id, cursor)
+            for item in batch:
+                cursor = int(item["sequence"])
+                yield {"id": f"{run_id}:{cursor}", "event": item["event_type"], "data": json.dumps({"run_id": run_id, **item["payload"]})}
+            snapshot = get_run(run_id)
+            if snapshot["status"] in {"completed", "error", "cancelled", "denied"} and not batch:
+                return
+            await asyncio.sleep(0.2)
+
+    return EventSourceResponse(event_stream())
+
+
+@app.post("/api/runs/{run_id}/approvals/{approval_id}")
+def durable_run_decision(run_id: str, approval_id: str, payload: RunDecisionPayload) -> dict[str, Any]:
+    try:
+        return decide_run(
+            run_id,
+            approval_id,
+            payload.decision,
+            arguments=payload.arguments,
+            note=payload.note,
+            approve_identical=payload.approve_identical,
+            workspace_root=WORKSPACE_ROOT,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Run or approval not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/runs/{run_id}/input")
+def durable_run_input(run_id: str, payload: RunChatPayload) -> dict[str, Any]:
+    try:
+        snapshot = get_run(run_id)
+        pending = next((item for item in snapshot["approvals"] if item["status"] == "pending" and item["action_type"] == "chat_input"), None)
+        if pending is None:
+            raise ValueError("run is not waiting for chat input")
+        return decide_run(run_id, pending["id"], "approve", arguments={"content": payload.content}, workspace_root=WORKSPACE_ROOT)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Run not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/runs/{run_id}/cancel")
+def durable_run_cancel(run_id: str) -> dict[str, Any]:
+    try:
+        return cancel_run(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Run not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.delete("/api/runs/{run_id}")
+def durable_run_delete(run_id: str) -> dict[str, str]:
+    try:
+        delete_run(run_id)
+        return {"status": "deleted", "run_id": run_id}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Run not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.post("/api/workflows/run")

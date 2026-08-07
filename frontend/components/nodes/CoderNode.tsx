@@ -3,6 +3,7 @@ import type { NodeProps } from "@xyflow/react";
 import NodeFrame, { NodeField } from "./NodeFrame";
 import { MODEL_OPTIONS } from "./types";
 import type { ModelProvider, WorkspaceNode } from "./types";
+import ModelRouteSettings from "../ModelRouteSettings";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
@@ -93,6 +94,7 @@ export default function CoderNode({ data }: NodeProps<WorkspaceNode>) {
           onChange={(event) => onChange?.({ system_prompt: event.target.value })}
         />
       </NodeField>
+      <ModelRouteSettings data={data} />
       <div className="node-note">
         {provider === "nanbeige"
           ? "Exact local alias; endpoint stays outside the canvas."
