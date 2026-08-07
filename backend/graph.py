@@ -6,7 +6,7 @@ import re
 import subprocess
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterator, TypedDict
 from urllib.parse import urlsplit
@@ -16,14 +16,16 @@ from langgraph.graph.state import CompiledStateGraph
 
 from .agent_engine import DEFAULT_LFM_BASE_URL, DEFAULT_LFM_MODEL
 from .database import SessionLocal, upsert_task
+from .ollama_control import DEFAULT_OLLAMA_MODEL, preflight_ollama_model
+from .runtime_control import preflight_runtime_profile
 from .schema import GraphDocument, GraphNode
+from .tools import WORKSPACE_TOOL_CATALOG, WORKSPACE_TOOLS
 
 
-SUPPORTED_NODE_TYPES = {"start", "buzz", "planner", "coder", "file", "task", "agent"}
+SUPPORTED_NODE_TYPES = {"start", "buzz", "planner", "coder", "file", "task", "agent", "tool", "runtime"}
 ALLOWED_AUDIO_SUFFIXES = {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".aac", ".webm"}
 ALLOWED_BUZZ_MODEL_SIZES = {"tiny", "base", "small", "medium", "large", "large-v2", "large-v3"}
 MAX_FILE_CHARS = 200_000
-DEFAULT_OLLAMA_MODEL = "hf.co/DavidAU/Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-NEO-MAX-MTP-GGUF/Q4_K_M"
 DEFAULT_MINIMAX_MODEL = "MiniMax-M3"
 DEFAULT_NANBEIGE_MODEL = "nanbeige4.2-3b-local"
 DEFAULT_NANBEIGE_BASE_URL = "http://127.0.0.1:8080/v1"
@@ -60,6 +62,7 @@ class ExecutionContext:
     workspace_root: Path
     events: list[dict[str, Any]]
     project_id: str | None = None
+    approved_resources: set[str] = field(default_factory=set)
 
 
 def _node_dict(node: GraphNode) -> dict[str, Any]:
@@ -478,8 +481,16 @@ def _ollama_output(prompt: str, data: dict[str, Any]) -> str:
     except ImportError as exc:
         raise NodeExecutionError("Ollama integration dependencies are not installed", "ollama_dependency_missing") from exc
 
-    model = _enforce_model_policy(str(data.get("model") or os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)))
-    base_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").strip()
+    requested_model = str(data.get("model") or os.getenv("OLLAMA_MODEL", "")).strip()
+    preflight = preflight_ollama_model(requested_model)
+    model = _enforce_model_policy(str(preflight.get("model") or DEFAULT_OLLAMA_MODEL))
+    if preflight.get("status") != "ready" or not preflight.get("exact_model"):
+        failure_class = str(preflight.get("failure_class") or "ollama_model_mismatch")
+        raise NodeExecutionError(
+            f"Ollama model preflight failed for the exact local model: {preflight.get('status', 'unknown')}",
+            failure_class,
+        )
+    base_url = str(preflight["base_url"])
     system_prompt = str(
         data.get("system_prompt")
         or "You are a precise local coding assistant. Return the most useful direct result for the workflow."
@@ -499,7 +510,7 @@ def _ollama_output(prompt: str, data: dict[str, Any]) -> str:
 
 
 def _model_output(prompt: str, data: dict[str, Any]) -> str:
-    provider = str(data.get("provider") or os.getenv("WORKSPACE_MODEL_PROVIDER", "nanbeige")).strip().lower()
+    provider = str(data.get("provider") or os.getenv("WORKSPACE_MODEL_PROVIDER", "ollama")).strip().lower()
     if provider == "nanbeige":
         return _nanbeige_output(prompt, data)
     if provider == "lfm":
@@ -587,6 +598,39 @@ def _task_node(node: GraphNode, state: AgentState, context: ExecutionContext) ->
     return f"Task updated: {title} ({status})"
 
 
+def _tool_node(node: GraphNode, context: ExecutionContext) -> str:
+    resource_id = str(node.data.get("resource_id") or "")
+    if not resource_id.startswith("tool:"):
+        raise NodeExecutionError("a governed tool resource is required", "tool_resource_invalid")
+    name = resource_id.split(":", 1)[1]
+    catalog = {str(item["name"]): item for item in WORKSPACE_TOOL_CATALOG}
+    item = catalog.get(name)
+    tools = {str(tool.name): tool for tool in WORKSPACE_TOOLS}
+    tool = tools.get(name)
+    if item is None or tool is None:
+        raise NodeExecutionError("the selected tool is not allowlisted", "tool_not_allowlisted")
+    if item.get("requires_approval") and resource_id not in context.approved_resources:
+        raise NodeExecutionError("the selected tool requires approval review", "approval_required")
+    arguments = node.data.get("arguments") or {}
+    if not isinstance(arguments, dict):
+        raise NodeExecutionError("tool arguments must be an object", "tool_arguments_invalid")
+    try:
+        return str(tool.invoke(arguments))[:MAX_FILE_CHARS]
+    except Exception as exc:
+        raise NodeExecutionError("the governed tool failed", "tool_failed") from exc
+
+
+def _runtime_node(node: GraphNode) -> str:
+    profile_id = str(node.data.get("profile_id") or "")
+    if not profile_id:
+        raise NodeExecutionError("a runtime profile is required", "runtime_profile_missing")
+    try:
+        result = preflight_runtime_profile(profile_id)
+    except KeyError as exc:
+        raise NodeExecutionError("the runtime profile is not registered", "runtime_profile_unknown") from exc
+    return json.dumps(result, ensure_ascii=False)[:MAX_FILE_CHARS]
+
+
 def _execute_node(node: GraphNode, state: AgentState, context: ExecutionContext) -> str:
     data = node.data
     if node.type == "start":
@@ -611,6 +655,9 @@ def _execute_node(node: GraphNode, state: AgentState, context: ExecutionContext)
             except OSError as exc:
                 raise NodeExecutionError("local file could not be read", "file_read_failed") from exc
         if mode == "write":
+            approval_id = f"file-write:{node.id}"
+            if approval_id not in context.approved_resources:
+                raise NodeExecutionError("workspace file writes require approval review", "approval_required")
             safe_file.parent.mkdir(parents=True, exist_ok=True)
             try:
                 safe_file.write_text(_current_input(state)[:MAX_FILE_CHARS], encoding="utf-8")
@@ -622,12 +669,18 @@ def _execute_node(node: GraphNode, state: AgentState, context: ExecutionContext)
         return _task_node(node, state, context)
     if node.type == "agent":
         target = str(data.get("target") or "")
+        if f"agent:{target}" not in context.approved_resources:
+            raise NodeExecutionError("local agent dispatch requires approval review", "approval_required")
         prefix = str(data.get("prompt_prefix") or "").strip()
         prompt = _current_input(state)
         if prefix:
             prompt = f"{prefix}\n\n{prompt}"
         pid = trigger_agent(target, prompt, context.workspace_root)
         return f"Started local agent '{target}' (pid {pid})"
+    if node.type == "tool":
+        return _tool_node(node, context)
+    if node.type == "runtime":
+        return _runtime_node(node)
     raise NodeExecutionError("node type is not executable", "node_type_invalid")
 
 
@@ -712,10 +765,16 @@ def stream_graph(
     project_id: str | None = None,
     events: list[dict[str, Any]] | None = None,
     result: dict[str, Any] | None = None,
+    approved_resources: set[str] | None = None,
 ) -> Iterator[dict[str, Any]]:
     event_log = events if events is not None else []
     result_holder = result if result is not None else {}
-    context = ExecutionContext(workspace_root=workspace_root, events=event_log, project_id=project_id)
+    context = ExecutionContext(
+        workspace_root=workspace_root,
+        events=event_log,
+        project_id=project_id,
+        approved_resources=set(approved_resources or set()),
+    )
     graph = compile_graph_from_json(graph_json, context)
     state: AgentState = {
         "messages": [input_text] if input_text else [],
@@ -748,6 +807,7 @@ def run_graph(
     workspace_root: Path,
     project_id: str | None = None,
     events: list[dict[str, Any]] | None = None,
+    approved_resources: set[str] | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
     event_log = events if events is not None else []
     result: dict[str, Any] = {}
@@ -758,6 +818,7 @@ def run_graph(
         project_id=project_id,
         events=event_log,
         result=result,
+        approved_resources=approved_resources,
     ):
         pass
     return str(result.get("last_output", input_text)), event_log

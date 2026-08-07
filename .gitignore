@@ -38,3 +38,7 @@ Thumbs.db
 # Local runtime artifacts
 *.log
 *.tmp
+
+# Agent/session artifacts
+.hermes/
+notes/

@@ -24,7 +24,10 @@ ai-workspace/
 │   ├── graph.py
 │   ├── hermes_adapter.py
 │   ├── main.py
+│   ├── runtime_control.py
+│   ├── terminal_control.py
 │   ├── tools.py
+│   ├── upgrade_control.py
 │   └── requirements.txt
 ├── frontend/
 │   ├── app/
@@ -34,6 +37,7 @@ ai-workspace/
 │   ├── components/
 │   │   ├── ChatPanel.tsx
 │   │   ├── Canvas.tsx
+│   │   ├── ControlCenterPanel.tsx
 │   │   └── nodes/
 │   ├── package.json
 │   └── tailwind.config.ts
@@ -152,6 +156,14 @@ set LFM_MODEL=LFM2.5-2.6B
 
 Every LFM generation performs `/v1/models` preflight and fails closed on an unavailable endpoint or mismatched model. It never silently falls back to Nanbeige.
 
+## Runtime Control, Terminal Preview, and Upgrade Center
+
+The right-hand **Control Center** exposes named GPU/model profiles and read-only preflight. The `ollama-local-models` profile is the priority selection lane and lists exact IDs from local Ollama; the verified `nanbeige-rtx2070-super` profile remains the protected baseline. The approved RTX 5060 Ti M⊕ workspace target (`:8081` / `nanbeige4.2-3b-workspace`), dual-GPU review profile, and LFM experimental profile are data-only until an explicit activation workflow is designed and approved.
+
+The current terminal surface is intentionally a **preview/classifier**, not a command runner. `POST /api/terminal/preview` rejects credentials, shell chaining, redirection, network commands, process-control commands, destructive commands, and out-of-workspace working directories. It never executes the submitted command. A future interactive terminal must add explicit process ownership, approval, cancellation, output caps, and environment filtering before execution is enabled.
+
+The Upgrade Center is also read-only in this slice. It inventories local manifests/artifacts and checks disk, manifest, and active-baseline readiness. Downloads, builds, service changes, activation, and rollback require a separate explicit mutation workflow with backup and verification receipts.
+
 Useful API routes:
 
 - `GET /api/health`
@@ -163,6 +175,13 @@ Useful API routes:
 - `POST /api/execute` — SSE execution stream
 - `GET /api/chat/tools` — governed local/Hermes tool catalog
 - `POST /api/chat/stream` — opt-in cyclic LFM chat/tool SSE stream
+- `GET /api/ollama/models` — exact installed Ollama inventory from loopback `/api/tags` + `/v1/models`
+- `POST /api/ollama/preflight` — exact Ollama model readiness check; no pull/delete/start action
+- `GET /api/runtime/profiles` — named data-only GPU/model profiles
+- `GET /api/runtime/profiles/{id}/preflight` — exact local identity/readiness check
+- `POST /api/terminal/preview` — bounded no-execution command classification
+- `GET /api/upgrades/inventory` — local upgrade inventory, no downloads
+- `GET /api/upgrades/preflight` — manifest/disk/baseline readiness check
 - `GET /api/tasks`
 - `GET /api/agents`
 

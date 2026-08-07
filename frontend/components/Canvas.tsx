@@ -18,14 +18,20 @@ import {
 import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
 
 import AgentNode from "./nodes/AgentNode";
+import ApprovalReview from "./ApprovalReview";
 import ChatPanel from "./ChatPanel";
+import ControlCenterPanel from "./ControlCenterPanel";
+import LibraryPanel from "./LibraryPanel";
 import BuzzNode from "./nodes/BuzzNode";
 import CoderNode from "./nodes/CoderNode";
 import FileNode from "./nodes/FileNode";
 import PlannerNode from "./nodes/PlannerNode";
 import StartNode from "./nodes/StartNode";
 import TaskNode from "./nodes/TaskNode";
+import ToolNode from "./nodes/ToolNode";
+import RuntimeNode from "./nodes/RuntimeNode";
 import { NODE_META, nodeDefaults, persistedData, type NodeKind, type WorkspaceNodeData } from "./nodes/types";
+import type { ApprovalPreview, LibraryResource } from "../lib/library-types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 const NODE_MIME = "application/x-mo-node-kind";
@@ -67,6 +73,11 @@ type SseMessage = {
   data: Record<string, unknown>;
 };
 
+type PendingApproval = ApprovalPreview & (
+  | { kind: "action"; resource: LibraryResource; arguments: Record<string, unknown> }
+  | { kind: "graph" }
+);
+
 const initialNodes: CanvasNode[] = [
   {
     id: "start-1",
@@ -99,6 +110,8 @@ const nodeTypes = {
   file: FileNode,
   task: TaskNode,
   agent: AgentNode,
+  tool: ToolNode,
+  runtime: RuntimeNode,
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -184,6 +197,7 @@ export default function Canvas() {
   const [notice, setNotice] = useState("Ready to compose a local workflow.");
   const [runLines, setRunLines] = useState<RunLine[]>([]);
   const [health, setHealth] = useState<Health | null>(null);
+  const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
 
   const updateNodeData = useCallback((id: string, patch: Record<string, unknown>) => {
     setNodes((current) =>
@@ -231,6 +245,50 @@ export default function Canvas() {
     const fallback = { x: 180 + (nodes.length % 3) * 300, y: 90 + (nodes.length % 4) * 170 };
     setNodes((current) => [...current, bindNode(createNode(kind, position ?? fallback))]);
   }, [bindNode, nodes.length, setNodes]);
+
+  const addLibraryResource = useCallback((resource: LibraryResource) => {
+    let kind: NodeKind;
+    let patch: Record<string, unknown>;
+    if (resource.category === "tool") { kind = "tool"; patch = { resource_id: resource.resource_id, label: resource.label, arguments: {} }; }
+    else if (resource.category === "skill") { kind = "tool"; patch = { resource_id: "tool:read_hermes_skill", label: resource.label, arguments: { skill_name: resource.metadata?.skill_name ?? resource.resource_id.slice(6) } }; }
+    else if (resource.category === "agent") { kind = "agent"; patch = { target: resource.resource_id.slice(6), label: resource.label }; }
+    else if (resource.category === "model") { kind = "coder"; patch = { provider: resource.provider, model: resource.model, label: resource.label }; }
+    else if (resource.category === "runtime") { kind = "runtime"; patch = { profile_id: resource.metadata?.profile_id, label: resource.label }; }
+    else { setNotice("Use Deploy template for template resources."); return; }
+    const fallback = { x: 180 + (nodes.length % 3) * 300, y: 90 + (nodes.length % 4) * 170 };
+    const node = createNode(kind, fallback);
+    setNodes((current) => [...current, bindNode({ ...node, data: { ...node.data, ...patch } })]);
+    setNotice(`Added ${resource.label} to the canvas.`);
+  }, [bindNode, nodes.length, setNodes]);
+
+  const runLibraryResource = useCallback(async (resource: LibraryResource, args: Record<string, unknown>, approved = false, previewId?: string) => {
+    try {
+      let preview: ApprovalPreview;
+      if (previewId) preview = { preview_id: previewId, approvals: [], requires_approval: approved };
+      else {
+        const response = await fetch(`${API_URL}/api/actions/preview`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ resource_id: resource.resource_id, arguments: args }) });
+        if (!response.ok) throw new Error(`Action preview failed (${response.status}).`);
+        preview = await response.json() as ApprovalPreview;
+        if (preview.requires_approval && !approved) { setPendingApproval({ ...preview, kind: "action", resource, arguments: args }); return; }
+      }
+      setNotice(`Running ${resource.label}…`);
+      const response = await fetch(`${API_URL}/api/actions/run`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ resource_id: resource.resource_id, arguments: args, preview_id: preview.preview_id, approved }) });
+      const payload = await response.json() as { output?: string; detail?: string };
+      if (!response.ok) throw new Error(payload.detail ?? `Action failed (${response.status}).`);
+      setOutput(String(payload.output ?? "")); setRunStatus("complete"); setNotice(`${resource.label} completed.`);
+    } catch (error) { setRunStatus("error"); setNotice(displayError(error)); }
+  }, []);
+
+  const deployTemplate = useCallback(async (resource: LibraryResource) => {
+    try {
+      const templateId = String(resource.metadata?.template_id ?? resource.resource_id.slice(9));
+      const response = await fetch(`${API_URL}/api/templates/${encodeURIComponent(templateId)}/instantiate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ options: {} }) });
+      if (!response.ok) throw new Error(`Template deployment failed (${response.status}).`);
+      const payload = await response.json() as { graph: { nodes: CanvasNode[]; edges: Edge[] } };
+      setNodes(payload.graph.nodes.map((node) => bindNode({ ...node, data: { ...nodeDefaults(node.type), ...node.data } })));
+      setEdges(payload.graph.edges); setNotice(`Deployed ${resource.label}. Review the nodes, then Execute Flow.`);
+    } catch (error) { setNotice(displayError(error)); }
+  }, [bindNode, setEdges, setNodes]);
 
   const onPaletteDragStart = useCallback((event: DragEvent<HTMLButtonElement>, kind: NodeKind) => {
     event.dataTransfer.setData(NODE_MIME, kind);
@@ -342,7 +400,17 @@ export default function Canvas() {
     }
   }, [edges, nodes]);
 
-  const executeWorkspace = useCallback(async () => {
+  const executeWorkspace = useCallback(async (approvalPreviewId?: string) => {
+    const graph = serializedGraph(nodes as CanvasNode[], edges);
+    try {
+      if (!approvalPreviewId) {
+        const previewResponse = await fetch(`${API_URL}/api/templates/preview-run`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ graph }) });
+        if (!previewResponse.ok) throw new Error(`Workflow review failed (${previewResponse.status}).`);
+        const preview = await previewResponse.json() as ApprovalPreview;
+        if (preview.requires_approval) { setPendingApproval({ ...preview, kind: "graph" }); return; }
+        approvalPreviewId = preview.preview_id;
+      }
+    } catch (error) { setRunStatus("error"); setNotice(displayError(error)); return; }
     setRunStatus("running");
     setOutput("");
     setRunLines([{ id: `run-${Date.now()}`, kind: "system", text: "Opening LangGraph execution stream…" }]);
@@ -352,8 +420,9 @@ export default function Canvas() {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
         body: JSON.stringify({
-          graph: serializedGraph(nodes as CanvasNode[], edges),
+          graph,
           input_text: inputText,
+          approval_preview_id: approvalPreviewId,
           ...(projectId ? { project_id: projectId } : {}),
         }),
       });
@@ -465,6 +534,8 @@ export default function Canvas() {
 
       <div className="workspace-body">
         <aside className="left-panel panel-surface">
+          <LibraryPanel onAdd={addLibraryResource} onRun={(resource, args) => void runLibraryResource(resource, args)} onDeploy={(resource) => void deployTemplate(resource)} />
+          <div className="panel-divider" />
           <div className="panel-heading">
             <div><span className="eyebrow">BUILD</span><h2>Node palette</h2></div>
             <span className="count-badge">{nodes.length}</span>
@@ -544,8 +615,21 @@ export default function Canvas() {
           </div>
           <div className="panel-divider" />
           <ChatPanel />
+          <div className="panel-divider" />
+          <ControlCenterPanel />
         </aside>
       </div>
+      {pendingApproval && <ApprovalReview
+        title={pendingApproval.kind === "graph" ? "Approve workflow actions" : `Approve ${pendingApproval.resource.label}`}
+        approvals={pendingApproval.approvals}
+        onCancel={() => setPendingApproval(null)}
+        onApprove={() => {
+          const pending = pendingApproval;
+          setPendingApproval(null);
+          if (pending.kind === "graph") void executeWorkspace(pending.preview_id);
+          else void runLibraryResource(pending.resource, pending.arguments, true, pending.preview_id);
+        }}
+      />}
     </div>
   );
 }

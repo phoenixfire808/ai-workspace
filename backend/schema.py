@@ -7,7 +7,7 @@ from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, ConfigDict, Field
 
 
-NodeType = Literal["start", "buzz", "planner", "coder", "file", "task", "agent"]
+NodeType = Literal["start", "buzz", "planner", "coder", "file", "task", "agent", "tool", "runtime"]
 NODE_ID_PATTERN = r"^[A-Za-z][A-Za-z0-9_-]{0,119}$"
 EDGE_ID_PATTERN = r"^[A-Za-z][A-Za-z0-9_-]{0,159}$"
 
@@ -62,6 +62,7 @@ class RunPayload(BaseModel):
     graph: GraphDocument
     input_text: str = Field(default="", max_length=200_000)
     project_id: str | None = Field(default=None, max_length=64)
+    approval_preview_id: str | None = Field(default=None, max_length=80)
 
 
 class ValidationPayload(BaseModel):

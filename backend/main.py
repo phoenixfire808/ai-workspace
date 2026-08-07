@@ -37,6 +37,23 @@ from .graph import (
     validate_graph,
 )
 from .schema import ChatStreamPayload, ProjectPayload, RunPayload, ValidationPayload
+from .runtime_control import list_runtime_profiles, preflight_runtime_profile
+from .terminal_control import TerminalPreviewRequest, preview_terminal_command
+from .upgrade_control import upgrade_inventory, upgrade_preflight
+from .ollama_control import OllamaPreflightPayload, list_ollama_models, preflight_ollama_model
+from .library import (
+    ActionPreviewPayload,
+    ActionRunPayload,
+    GraphApprovalPayload,
+    TemplateInstantiatePayload,
+    consume_graph_preview,
+    get_resource,
+    instantiate_template,
+    preview_action,
+    preview_graph,
+    query_library,
+    run_action,
+)
 from .tools import WORKSPACE_TOOL_CATALOG, WORKSPACE_TOOL_NAMES
 
 
@@ -115,7 +132,7 @@ def _lfm_ready() -> bool:
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
-    model_provider = os.getenv("WORKSPACE_MODEL_PROVIDER", "nanbeige").strip().lower()
+    model_provider = os.getenv("WORKSPACE_MODEL_PROVIDER", "ollama").strip().lower()
     return {
         "status": "ok",
         "workspace_root": str(WORKSPACE_ROOT),
@@ -143,6 +160,100 @@ def agents() -> dict[str, Any]:
 def chat_tools() -> dict[str, Any]:
     """Expose the governed chat tool catalog without provider credentials or commands."""
     return {"tools": WORKSPACE_TOOL_CATALOG}
+
+
+@app.get("/api/library")
+def library(category: str | None = None, query: str | None = None, limit: int = 200, offset: int = 0) -> dict[str, Any]:
+    """Return the normalized local tool, agent, skill, model, runtime, and template registry."""
+    return query_library(category=category, query=query, limit=limit, offset=offset)
+
+
+@app.get("/api/library/{resource_id:path}")
+def library_resource(resource_id: str) -> dict[str, Any]:
+    try:
+        return get_resource(resource_id).model_dump(mode="json")
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Library resource not found") from exc
+
+
+@app.post("/api/actions/preview")
+def action_preview(payload: ActionPreviewPayload) -> dict[str, Any]:
+    try:
+        return preview_action(payload)
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/actions/run")
+def action_run(payload: ActionRunPayload) -> dict[str, Any]:
+    try:
+        return run_action(payload, WORKSPACE_ROOT)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/templates")
+def templates() -> dict[str, Any]:
+    return query_library(category="template", limit=200)
+
+
+@app.post("/api/templates/{template_id}/instantiate")
+def template_instantiate(template_id: str, payload: TemplateInstantiatePayload) -> dict[str, Any]:
+    try:
+        return instantiate_template(template_id, payload.options)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Workflow template not found") from exc
+
+
+@app.post("/api/templates/preview-run")
+def template_preview_run(payload: GraphApprovalPayload) -> dict[str, Any]:
+    try:
+        validate_graph(payload.graph)
+        return preview_graph(payload.graph)
+    except GraphValidationError as exc:
+        raise HTTPException(status_code=400, detail={"errors": exc.errors}) from exc
+
+
+@app.get("/api/ollama/models")
+def ollama_models() -> dict[str, Any]:
+    """Discover exact locally installed Ollama model IDs without pulling or mutating models."""
+    return list_ollama_models()
+
+
+@app.post("/api/ollama/preflight")
+def ollama_preflight(payload: OllamaPreflightPayload) -> dict[str, Any]:
+    """Require an exact installed Ollama model before a workflow can invoke it."""
+    return preflight_ollama_model(payload.model)
+
+
+@app.get("/api/runtime/profiles")
+def runtime_profiles() -> dict[str, Any]:
+    """Return named, data-only GPU/model profiles; this route never activates a listener."""
+    return {"profiles": list_runtime_profiles(), "mutation": "none"}
+
+
+@app.get("/api/runtime/profiles/{profile_id}/preflight")
+def runtime_profile_preflight(profile_id: str) -> dict[str, Any]:
+    """Check a named profile's exact local model identity without changing runtime state."""
+    return preflight_runtime_profile(profile_id)
+
+
+@app.post("/api/terminal/preview")
+def terminal_preview(payload: TerminalPreviewRequest) -> dict[str, Any]:
+    """Classify a bounded terminal request; no command execution is exposed here."""
+    return preview_terminal_command(payload)
+
+
+@app.get("/api/upgrades/inventory")
+def upgrades_inventory() -> dict[str, Any]:
+    return upgrade_inventory()
+
+
+@app.get("/api/upgrades/preflight")
+def upgrades_preflight() -> dict[str, Any]:
+    return upgrade_preflight()
 
 
 @app.get("/api/projects")
@@ -184,12 +295,16 @@ def validate_workflow(payload: ValidationPayload) -> dict[str, Any]:
 @app.post("/api/workflows/run")
 def run_workflow(payload: RunPayload) -> dict[str, Any]:
     try:
+        approved_resources = consume_graph_preview(payload.approval_preview_id, payload.graph)
         output, events = run_graph(
             payload.graph,
             input_text=payload.input_text,
             workspace_root=WORKSPACE_ROOT,
             project_id=payload.project_id,
+            approved_resources=approved_resources,
         )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except GraphValidationError as exc:
         raise HTTPException(status_code=400, detail={"errors": exc.errors}) from exc
     except Exception as exc:
@@ -207,8 +322,11 @@ async def execute_workflow(payload: RunPayload) -> EventSourceResponse:
     """Execute a canvas graph and stream metadata-only LangGraph node events."""
     try:
         validate_graph(payload.graph)
+        approved_resources = consume_graph_preview(payload.approval_preview_id, payload.graph)
     except GraphValidationError as exc:
         raise HTTPException(status_code=400, detail={"errors": exc.errors}) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     run_id = str(uuid.uuid4())
     events: list[dict[str, Any]] = []
@@ -224,6 +342,7 @@ async def execute_workflow(payload: RunPayload) -> EventSourceResponse:
                 project_id=payload.project_id,
                 events=events,
                 result=result,
+                approved_resources=approved_resources,
             ):
                 pass
             results.put(("complete", {"output": str(result.get("last_output", payload.input_text))}))

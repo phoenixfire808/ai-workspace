@@ -1,6 +1,6 @@
 import type { Node } from "@xyflow/react";
 
-export type NodeKind = "start" | "buzz" | "planner" | "coder" | "file" | "task" | "agent";
+export type NodeKind = "start" | "buzz" | "planner" | "coder" | "file" | "task" | "agent" | "tool" | "runtime";
 export type ModelProvider = "nanbeige" | "lfm" | "minimax" | "ollama";
 
 export interface WorkspaceNodeData extends Record<string, unknown> {
@@ -18,7 +18,7 @@ export const MODEL_OPTIONS: Record<ModelProvider, { label: string; model: string
   lfm: { label: "LFM2.5-2.6B · explicit agent option", model: "LFM2.5-2.6B" },
   minimax: { label: "MiniMax-M3", model: "MiniMax-M3" },
   ollama: {
-    label: "Ollama · environment configured",
+    label: "Ollama · installed local models",
     model: "",
   },
 };
@@ -27,10 +27,12 @@ export const NODE_META: Record<NodeKind, { label: string; icon: string; accent: 
   start: { label: "Start", icon: "◉", accent: "node-start", hint: "Workflow input" },
   buzz: { label: "Buzz transcription", icon: "◌", accent: "node-buzz", hint: "Whisper audio" },
   planner: { label: "Planner", icon: "✦", accent: "node-planner", hint: "Intent to plan" },
-  coder: { label: "Coder model", icon: "⌘", accent: "node-coder", hint: "Nanbeige / LFM local" },
+  coder: { label: "Coder model", icon: "⌘", accent: "node-coder", hint: "Ollama installed / local alternatives" },
   file: { label: "File I/O", icon: "▣", accent: "node-file", hint: "Workspace files" },
   task: { label: "Task tracker", icon: "☷", accent: "node-task", hint: "SQLite task" },
   agent: { label: "Agent reaction", icon: "↗", accent: "node-agent", hint: "Allowlisted launch" },
+  tool: { label: "Governed tool", icon: "⚙", accent: "node-tool", hint: "Registry capability" },
+  runtime: { label: "Runtime profile", icon: "◇", accent: "node-runtime", hint: "Exact-model preflight" },
 };
 
 export function persistedData(data: WorkspaceNodeData): Record<string, unknown> {
@@ -55,8 +57,8 @@ export function nodeDefaults(kind: NodeKind): WorkspaceNodeData {
       return {
         label: "Coder model",
         description: "Generate a result with the selected provider.",
-        provider: "nanbeige",
-        model: "nanbeige4.2-3b-local",
+        provider: "ollama",
+        model: "",
         system_prompt: "You are a precise local coding assistant. Return the most useful direct result for the workflow.",
         temperature: 0.6,
         enable_thinking: true,
@@ -68,5 +70,9 @@ export function nodeDefaults(kind: NodeKind): WorkspaceNodeData {
       return { label: "Task tracker", description: "Persist a task in SQLite.", title: "", status: "todo", notes: "" };
     case "agent":
       return { label: "Agent reaction", description: "Start a configured local agent.", target: "", prompt_prefix: "" };
+    case "tool":
+      return { label: "Governed tool", description: "Run an allowlisted local capability.", resource_id: "", arguments: {} };
+    case "runtime":
+      return { label: "Runtime profile", description: "Preflight a named local runtime without activating it.", profile_id: "" };
   }
 }

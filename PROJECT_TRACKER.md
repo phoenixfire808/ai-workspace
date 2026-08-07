@@ -61,11 +61,24 @@ Keep the existing publisher-fork Nanbeige runtime on the RTX 2070 SUPER as the v
 | 2026-08-07 00:07 CDT | Frontend recovery build | After removing only generated `.next-acceptance`, the isolated `NEXT_DIST_DIR=.next-acceptance` typecheck and Next production build passed after the ChatPanel CRLF fix. The live Next server was restarted on `127.0.0.1:3000` and reached `Ready in 1.5s`; final HTTP smoke remains pending. |
 | 2026-08-07 00:09 CDT | Acceptance harness correction | The first parent HTTP harness correctly reached the live services but assumed `/api/chat/tools` was a bare list; the endpoint returned an envelope object, so no product assertion completed. The parser was corrected for the retry. |
 | 2026-08-07 00:10 CDT | Parent final loopback smoke | Frontend `:3000` returned HTTP 200 with the Local coding loop surface; backend `:8000/api/health` returned Nanbeige provider `nanbeige4.2-3b-local` and `lfm_ready=false`; `/api/chat/tools` returned seven governed tools; shared `:8080/v1/models` returned only exact `nanbeige4.2-3b-local`. |
+| 2026-08-07 00:35 CDT | SM120 candidate build | Parent-owned `cmake --build build-sm120 --config Release --target llama-server --parallel 8` completed normally with exit code 0. `llama-server.exe`, `llama-server-impl.dll`, `llama-common.dll`, `llama.dll`, `ggml.dll`, `ggml-base.dll`, `ggml-cpu.dll`, `ggml-cuda.dll`, and `mtmd.dll` all exist under `D:\\AI\\Runtimes\\nanbeige-llama.cpp\\build-sm120\\bin\\Release`. This is a built RTX 5060 candidate profile, not an activated route. |
+| 2026-08-07 00:35 CDT | SM120 artifact identity | SHA-256: `llama-server.exe` = `4d9de94cbf97d33153a8fcf61e55e7b7fc40dccd3f72927a513b7adfe5a3f000`; `ggml-cuda.dll` = `91e99e7c305db1b942d589097ffee4b04d8f206d2984060c1b5adc4c3e954a9c`. All nine expected runtime files were hashed successfully; full in-session receipt is retained in project history. |
 | 2026-08-07 00:10 CDT | Changed-behavior acceptance | Safe sandbox output completed, `os.environ` access was rejected by the AST policy, Hermes catalog discovery returned 192 skills without credential/session access, and Start→Planner SSE completed `run_started → node → node → complete`. Disposable FastAPI `:8010` was stopped after acceptance. |
 | 2026-08-07 00:10 CDT | Acceptance status | LFM clone identity, backend compile/import, frontend typecheck, isolated Next production build, Nanbeige non-regression, governed tool catalog, LFM fail-closed readiness, Planner execution, sandbox policy, and live loopback smoke are accepted. A real LFM tool-generation loop remains blocked until an exact `LFM2.5-2.6B` endpoint is separately provisioned. |
 | 2026-08-07 00:10 CDT | Parent acceptance close | Independent retry against reconciled FastAPI `:8001` confirmed frontend `:3000` HTTP 200, exact Nanbeige model on `:8080`, seven governed tools, `lfm_preflight_timeout` fail-closed chat behavior, and real Nanbeige Start→Coder SSE completion in 1.96 seconds. Both parent-launched services remained running after smoke. |
 | 2026-08-07 00:11 CDT | Acceptance lifecycle cleanup | Stopped only the disposable parent FastAPI `:8001` process after acceptance. The live frontend `:3000`, baseline FastAPI `:8000`, and Nanbeige `:8080` services remain outside that cleanup. |
 | 2026-08-07 00:11 CDT | Runtime-control scope | Started the next additive slice: named GPU/model profiles and read-only preflight, a workspace-rooted terminal preview/classifier, and local Upgrade Center inventory/preflight. No listener activation, model restart, arbitrary shell execution, download, external action, or rollback mutation is included in this slice. |
+| 2026-08-07 00:14 CDT | Frontend readiness receipt | Background process `proc_3dd9d229d713` matched `Ready in 1503ms` for `npm run start -- --hostname 127.0.0.1 --port 3000`; the live UI remains available on loopback. |
+| 2026-08-07 00:14 CDT | Approved topology reconciliation | Drew's approved target is split Nanbeige: SearXNG on `:8080` / `nanbeige4.2-3b-local`, M⊕ on `:8081` / `nanbeige4.2-3b-workspace` using the SM120 RTX 5060 Ti route. Parent read-only probing found only `:8080` listening and `:8081` unavailable; no migration, restart, or listener mutation was performed, so the split topology remains pending implementation/acceptance. |
+| 2026-08-07 00:24 CDT | Agent operator guidance requested | Drew asked how to use “the agent.” Current source exposes two distinct surfaces: the right-side `Local coding loop` (LFM-backed chat with seven governed tools and approval prompts) and the canvas `Agent reaction` node (allowlisted `WORKSPACE_AGENT_COMMANDS` launch). The chat UI is live but intentionally fails closed because the exact LFM endpoint is not provisioned; configured Agent Reaction targets are currently empty. No configuration or lifecycle mutation was performed for this guidance request. |
+| 2026-08-07 00:24 CDT | Agent/tool UX priority | Drew requested visible dropdown menus for selecting agents and tools, immediate deployment controls, and first-class tool/agent nodes on the canvas. Planning is active before implementation. Proposed baseline: populate Agent choices from `/api/agents`, Tool choices from `/api/chat/tools`, add a governed Tool node, and provide both “Add to canvas” and “Run now” paths while retaining approval gates for execution/dispatch tools. Exact quick-deploy and registry scope await Drew's confirmation. |
+| 2026-08-07 00:29 CDT | Ollama-first priority correction | Drew directed that models installed in Ollama take priority. Active implementation now targets local Ollama model discovery/selection, exact local readiness, and one real Ollama workflow smoke. Nanbeige `:8080` remains the verified baseline; the SM120 split target and LFM route are deferred and will not be started or repointed during this lane. |
+| 2026-08-07 00:29 CDT | Unified library decisions | Drew selected the full interaction: `Add to canvas`, `Run now`, and one-click prebuilt templates. The registry should expose as many safe local options as possible, including governed tools, configured agents, Hermes skills, installed Ollama models, explicit model routes, runtime profiles, and templates. Templates must queue all required approvals into one review screen before execution. Ollama-first priority is preserved in model ordering. |
+| 2026-08-07 00:29 CDT | Unified library plan | Wrote the parent-only implementation plan at `.hermes/plans/2026-08-07_002401-unified-agent-tool-library.md`. It specifies a backend-owned normalized registry, searchable category/dropdown UI, Tool and Runtime nodes, registry-backed Agent/Coder dropdowns, governed quick-run SSE, server-bound approval receipts, and eight starter templates. No source implementation or runtime mutation was performed during planning. |
+| 2026-08-07 00:14 CDT | Disposable verifier cleanup | Confirmed `proc_02c22c668fe5` exited with code `-15` after the acceptance batch. No test FastAPI process remains on `:8010`; live `:8000`, `:3000`, and Nanbeige `:8080` services were not targeted. |
+| 2026-08-07 00:42 CDT | Ollama implementation + testing boundary | Added loopback-only Ollama inventory/preflight, Ollama-first fresh defaults, exact installed-ID dropdowns in Coder/Control Center, and the `ollama-local-models` runtime profile. Read-only probing found the two exact installed models and both `/v1/models` entries; Drew directed that remaining model testing wait until final acceptance, so no more inference is run in this lane. |
+| 2026-08-07 00:48 CDT | Live Ollama UI/backend integration | Replaced the stale FastAPI `:8000` process with the updated source; `/api/ollama/models` now returns HTTP 200 and `ready` with two models, while Nanbeige health remains ready. Rebuilt the frontend with typecheck + canonical production build, restarted `:3000`, and confirmed HTTP 200 plus the `Control Center` marker. Ollama inventory is client-fetched after hydration. No model inference was run. |
+| 2026-08-07 01:00 CDT | Unified Library UI deployed | Drew approved the production UI replacement. Stopped only stale frontend PID `61824` without tree termination, confirmed port `3000` released, and launched the current Next production build on loopback. Next reported `Ready in 1299ms`; HTTP `:3000` returned 200 and the replacement listener is PID `5976`. Live browser acceptance shows the hydrated `Local library`, category/search controls, 217 registry options, Ollama-first installed model choices, governed Tool and Runtime palette nodes, eight templates, backend health, and the approval-aware controls. Backend `:8000/api/library` remained HTTP 200 throughout; no model inference or backend restart occurred. |
 
 ## 1.3 Branch handoff and autonomy boundary — ACTIVE
 
@@ -323,26 +336,29 @@ Run only after Milestones 1–5 are assembled:
 ### Milestone 7 — Runtime and hardware selector — IN PROGRESS
 
 - [ ] Inventory physical GPU index/name/UUID/VRAM and approved local model/runtime artifacts without exposing secrets or process command lines.
-- [ ] Define versioned runtime-profile schema for model, exact alias, executable, endpoint, GPU mask/device/split mode, context, slots, and limits.
-- [ ] Support profiles for RTX 5060 Ti only, RTX 2070 SUPER only, one compatible model split across both GPUs, and optionally one independent server per GPU.
-- [ ] Add Runtime Control UI for selecting, preflighting, starting, stopping, and inspecting profiles; preserve the currently verified route until cutover succeeds.
+- [x] Define named runtime-profile schema for model, exact alias, endpoint, GPU mask/device/split mode, slots, state, and activation policy.
+- [x] Add data-only profiles for RTX 5060 Ti artifact, RTX 2070 SUPER baseline, dual-GPU review, and explicit LFM experiment; no profile activation is implied.
+- [x] Build and hash the complete SM120 `llama-server` candidate artifact set on D: for the RTX 5060 Ti profile; activation and GPU placement remain gated.
+- [x] Add Runtime Control UI for selecting, preflighting, and inspecting profiles; start/stop/cutover controls remain intentionally unimplemented.
 - [ ] Require live exact-alias, executable ownership, target/foreign GPU placement, bounded generation, and rollback receipts per activated profile.
 
 **Gate:** Drew can select an approved model/GPU profile, see the effective settings before launch, activate it without port/process ambiguity, and return to the prior verified profile in one controlled action.
 
-### Milestone 8 — Integrated terminal — PLANNED
+### Milestone 8 — Integrated terminal — PREVIEW CONTRACT
 
-- [ ] Select a Windows terminal contract: interactive ConPTY versus bounded command/session console for the first release.
+- [x] Select the first contract as a bounded workspace-rooted command preview/classifier; no command execution is exposed yet.
+- [x] Reject credential access, shell chaining, redirection, network/process-control/destructive commands, and out-of-workspace CWDs.
 - [ ] Add terminal session create/input/resize/cancel/close APIs and streamed output with explicit process ownership.
 - [ ] Root sessions in the project workspace, filter inherited credentials/environment, cap retained output, and keep commands/results out of metadata-only workflow logs.
 - [ ] Add visible approval and policy boundaries for network, destructive, external, credential, or out-of-workspace operations.
 
 **Gate:** A user can open, use, cancel, and close a local workspace terminal from M⊕ without focus theft, orphaned processes, secret leakage, or graph-driven arbitrary command execution.
 
-### Milestone 9 — Upgrade Center — PLANNED
+### Milestone 9 — Upgrade Center — READ-ONLY SLICE
 
-- [ ] Inventory M⊕ app dependencies, local model revisions/artifact hashes, and runtime source/binary revisions.
-- [ ] Show installed, pinned, and candidate versions plus disk/toolchain/GPU preflight before mutation.
+- [x] Inventory local M⊕ manifests and LFM artifact presence without downloads or credential access.
+- [x] Show disk, manifest, and verified Nanbeige baseline readiness before any mutation.
+- [x] Expose a visible rollback policy that remains unarmed until a future explicit backup/activation workflow.
 - [ ] Run approved downloads/builds in tracked background jobs with progress and bounded logs on the intended drive.
 - [ ] Verify artifact checksums and runtime smoke before activation; retain the previous app/runtime/profile for rollback.
 - [ ] Provide status, cancel, retry, activate, and one-step rollback controls without silently touching SearXNG or another live project.
@@ -359,6 +375,10 @@ Run only after Milestones 1–5 are assembled:
 - `backend/agent_engine.py`
 - `backend/tools.py`
 - `backend/hermes_adapter.py`
+- `backend/ollama_control.py`
+- `backend/runtime_control.py`
+- `backend/terminal_control.py`
+- `backend/upgrade_control.py`
 - `backend/requirements.txt`
 - `backend/database.py`
 - `backend/schema.py`
@@ -367,6 +387,7 @@ Run only after Milestones 1–5 are assembled:
 - `backend/.env.example`
 - `frontend/app/globals.css`
 - `frontend/components/ChatPanel.tsx`
+- `frontend/components/ControlCenterPanel.tsx`
 - `frontend/components/Canvas.tsx`
 - `frontend/components/nodes/*.tsx`
 - `frontend/components/nodes/PlannerNode.tsx`
@@ -376,7 +397,7 @@ Run only after Milestones 1–5 are assembled:
 - `.gitignore`
 - `START_BACKEND.cmd`
 - `START_FRONTEND.cmd`
-- Preserved superseded runtime artifacts: `D:\AI\Runtimes\nanbeige-llama.cpp\build-sm120\` and `D:\AI\Runtimes\nanbeige-workspace-launcher\{launch.config.json,Start-NanbeigeWorkspace.ps1,Status-NanbeigeWorkspace.ps1,Stop-NanbeigeWorkspace.ps1}`. They are not on the active route; the shared SearXNG SM75 launcher remains authoritative.
+- Built candidate RTX 5060 runtime artifacts: `D:\AI\Runtimes\nanbeige-llama.cpp\build-sm120\` and `D:\AI\Runtimes\nanbeige-workspace-launcher\{launch.config.json,Start-NanbeigeWorkspace.ps1,Status-NanbeigeWorkspace.ps1,Stop-NanbeigeWorkspace.ps1}`. The Release `llama-server` artifact set linked successfully and has recorded hashes, but it is not on the active route until profile preflight, generation, placement, and rollback acceptance pass; the shared SearXNG SM75 launcher remains authoritative.
 
 ### Updated after model correction
 
@@ -394,17 +415,28 @@ Run only after Milestones 1–5 are assembled:
 - `backend/tools.py` now exposes workspace-relative listing, bounded text reads, Python AST inspection, and a stricter allowlisted-import computation tool; tool catalog metadata identifies approval requirements.
 - `backend/hermes_adapter.py` adds local SKILL.md discovery/reading and an explicitly configured stdin-based dispatch seam without profile credentials or session access.
 - `frontend/components/ChatPanel.tsx`, `PlannerNode.tsx`, and the Canvas palette/stylesheet add the chat control surface and Buzz/typed-intent Planner → Coder path.
+- `backend/runtime_control.py` defines versioned named GPU/model profiles and exact loopback model preflight without activation or listener mutation.
+- `backend/terminal_control.py` and `POST /api/terminal/preview` provide a workspace-rooted no-execution classifier with credential, shell-chain, network, process-control, destructive, and out-of-root rejection.
+- `backend/upgrade_control.py` and the Upgrade Center routes inventory local manifests/artifacts, disk, and baseline readiness; rollback is visible but intentionally unarmed.
+- `frontend/components/ControlCenterPanel.tsx` exposes profile preflight, terminal preview, and read-only Upgrade Center inventory in the right panel.
+- `backend/ollama_control.py` adds loopback-only `/api/tags` + `/v1/models` inventory, exact-ID preflight, remote-endpoint rejection, and mutation-free readiness payloads.
+- `backend/graph.py` now uses Ollama as the fresh-install provider default, resolves a blank `OLLAMA_MODEL` from exact installed inventory, and preflights the selected model before `ChatOllama` generation; explicit Nanbeige remains supported.
+- `backend/runtime_control.py` puts `ollama-local-models` first and keeps the verified Nanbeige profile separately protected; `backend/.env.example` documents Ollama-first routing without mutating the ignored runtime `.env`.
+- `frontend/components/nodes/CoderNode.tsx` and `frontend/components/nodes/types.ts` default new coder nodes to Ollama and populate an exact installed-model dropdown; `ControlCenterPanel.tsx` displays the local inventory.
 
 ### Known incomplete / deferred state
 
 - The exact MiniMax-compatible endpoint and API key remain unconfigured because MiniMax is optional. A live M⊕ Nanbeige Coder-node call passed through the shared listener.
 - The Ollama server was not ready, Buzz was absent from PATH, and no allowlisted agent command was configured; those integrations remain fail-closed.
+- New parent read-only probing at 00:29–00:42 found Ollama healthy with two exact installed IDs and both OpenAI-compatible; this supersedes the earlier unavailable receipt for the current lane. No pull/delete/start mutation was performed.
 - Real shared Nanbeige model/GPU acceptance passed. Buzz, microphone, and Agent Reaction acceptance remain separate and unrun.
 - `npm audit --omit=dev` reports three high transitive PostCSS/sharp advisories in the newest Next 15 line; npm's automated fix requires the breaking Next 16 line, so it was not forced.
 - Independent-review fixes are now verified: server-side Qwen 2.5 rejection, environment-only provider endpoints, bounded model calls, Buzz-size allowlist, safe graph IDs, tested LangGraph/LangChain pins, correct compiled-graph annotation, automatic ignored `.env` loading, frontend topology/load guards, and robust/correlated SSE framing.
 - Deferred hardening: cancelling a synchronous worker after an SSE client disconnects, replacing the cross-thread event list with a queue, full SSE replay, and eliminating symlink/TOCTOU races around external Buzz/file writes.
 - The Python tool is a bounded same-user subprocess policy layer, not a security boundary equivalent to a VM/container; destructive or unrestricted shell/GUI/browser tools remain intentionally unimplemented.
 - The chat approval continuation currently resubmits the prompt with an approved tool list; durable LangGraph checkpoints/time-travel resume remain future work.
+- Runtime profile activation/start/stop/cutover, interactive ConPTY/session APIs, downloads/build jobs, checksum activation, and rollback mutation remain intentionally deferred.
+- Drew directed that all model testing be performed at the end. One bounded Ollama inference smoke against the installed LFM Ollama ID completed before that correction (`OLLAMA_SMOKE_OK`, 45.55s); it is an early receipt only, not final model acceptance. No further model inference/testing is authorized in this lane before final acceptance.
 
 ## 8. Worker orchestration log
 
@@ -701,3 +733,12 @@ Format all code cleanly. Acknowledge this prompt by outputting a brief plan, and
 - Opened ready-for-review PR #1 against `main`: `https://github.com/phoenixfire808/ai-workspace/pull/1`. GitHub reports `OPEN`, non-draft, head `feat/shared-nanbeige-agentic-workspace`, and the expected feature commit.
 - Parent-owned post-publication verification passed: `npm run typecheck`; `NEXT_DIST_DIR=.next-acceptance npm run build` on Next.js 15.5.23; frontend `/` 200; FastAPI `/api/health` 200; shared Nanbeige `/v1/models` 200. The isolated build did not race the live port-3000 server.
 - The follow-up working-tree changes were limited to the append-only tracker receipt and Next-generated `next-env.d.ts`/`tsconfig.json` references for `.next-acceptance`; they were published in `b59285b` without changing runtime behavior.
+
+## 17. Current-version GitHub update preflight — 2026-08-07 01:00 CDT
+
+- Drew requested the current assembled version be pushed to GitHub and carried by the existing ready-for-review PR #1. The target remains `phoenixfire808/ai-workspace`, base `main`, branch `feat/shared-nanbeige-agentic-workspace`; no duplicate repository or PR will be created.
+- The newer source slice adds the backend-owned unified local library/templates/approval contracts, Ollama inventory/preflight, named runtime profiles, terminal command preview classification, read-only upgrade inventory/preflight, Tool/Runtime nodes, Library/Control Center/approval UI, and Ollama-first Coder selection. The standalone Nanbeige baseline and LFM fail-closed route remain preserved.
+- The publication candidate excludes `.hermes/` internal plan output and `notes/` unrelated session material via `.gitignore`; caches, virtualenvs, local configuration, databases, and generated build outputs remain excluded. The canonical tracker and README are project-owned and remain included.
+- Parent-owned readiness hardening gates static library model routes: Nanbeige uses the active exact-model runtime preflight, LFM remains disabled until its separate runtime is provisioned, and MiniMax remains disabled until its endpoint/key are explicitly configured. No provider fallback or runtime mutation was added.
+- Final preflight passed: backend `.venv` `py_compile` for all modules; frontend `npm run typecheck`; isolated `NEXT_DIST_DIR=.next-current npm run build`; FastAPI TestClient matrix (health 200, 217-resource library, templates 200, five runtime profiles, Ollama ready, upgrade preflight ready, safe terminal preview allowed, shell command rejected, action preview 200); and current frontend build HTTP smoke on `127.0.0.1:3001` returned 200 with the M⊕ marker.
+- Publication state at this receipt: source is verified and ready to update PR #1; the final commit SHA and GitHub head will be recorded in the follow-up publication receipt after the push is confirmed.

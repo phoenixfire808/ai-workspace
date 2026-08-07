@@ -28,7 +28,7 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     "next-env.d.ts",
-    ".next-acceptance/types/**/*.ts"
+    ".next-current/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"
