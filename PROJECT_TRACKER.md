@@ -4,13 +4,12 @@
 
 ## 1. Current status
 
-- **Phase:** Runtime/GPU control, integrated terminal, and upgrade-center specification
-- **Status:** Current M⊕ build is live for Drew's inspection on loopback with the shared RTX 2070 Nanbeige route; LFM2.5 remains an offline opt-in route; selectable GPU/model profiles, terminal, and safe upgrades are the next product slice
+- **Phase:** Phase 27 — Nanbeige retired, LFM2.5-2.6B Q4_K_M persistent global default, option registry complete
+- **Status:** M⊕ build live at http://127.0.0.1:8000 with new global Ollama model selector; Nanbeige fully retired from M⊕; option catalog UI mounted; 26/26 tests pass; model saved to SQLite; source pushed and PR updated
 - **Workspace:** `C:\Users\Drew\Documents\Jarvis_Context\Projects\ai-workspace`
-- **Repository boundary:** Standalone sibling workspace. The existing dirty `DrewLocalVoice` repository is not being modified for this project.
-- **Last verified:** `2026-08-07 00:02:39 CDT`
-- **Current parent todo:** Launch the current assembled M⊕ build on loopback so Drew can inspect its present UI and agentic workflow progress; preserve runtime-profile, terminal, and upgrade work as the next implementation slice
-- **Testing policy:** Do not run the broad/final test batch until the implementation is assembled. Focused checks and the final smoke happen at the end in one consolidated verification pass.
+- **Last verified:** 2026-08-07 13:51 CDT
+- **Current parent todo:** Phase 27 complete; real model generation smoke, frontend build, and tracker finalization are next
+- **Testing policy:** Focused checks + one consolidated verification pass at end of each session
 
 ### Immediate next action
 
@@ -1340,7 +1339,61 @@ Drew wants a canvas node that can take one larger request, decompose it into use
 - `git diff --check` passed. Exact tracked scope is documentation-only: modified `PROJECT_TRACKER.md`, modified `README.md`, and new `M_PLUS_OPTION_COMPLETE_ROADMAP.md`; `.hermes/plans/2026-08-07_044931-option-complete-workspace-roadmap.md` is an ignored local handoff pointer. No application code, live profile, listener, model, device, external destination, or worker session was mutated.
 - No runtime test/build was run because this pass changes documentation only. The last accepted source baseline remains synchronized at `2999857abe9645e4986d43e10e78864d86db1d68`; future implementation must re-check the head before using it.
 
-### 27.3 Current-state reconciliation and Phase 0 authorization — 2026-08-07 04:55 CDT
+### 27.4 Nanbeige retirement · LFM Q4_K_M global default · option catalog — 2026-08-07 13:51 CDT
+
+**Source:** Drew said "I want to use this model hf.co/mradermacher/LFM2.5-2.6B-UNCENSORED-ABLITERATED-PHILADELPHIA-CLASS-GGUF:Q4_K_M", then "We don't need that crappy specialized runtime. I hate that stupid runtime. I don't even want it", then "I want to be able to just set my model like when I do the searXNG stuff". The separate SearXNG Nanbeige service at 127.0.0.1:8080 was **not touched**.
+
+**Model artifact confirmed:**
+- Ollama 0.32.6 · GGUF · lfm2 arch · ~2.7B params · Q4_K_M
+- Size: 1,674,456,659 bytes · Digest: 6054b576ac8a...7b8ba8
+- `/api/ollama/models` preflight: `exact_model=True, status=ready`
+
+**Architecture delivered:**
+- `WorkspaceModelSetting` table in SQLite with id/provider/model/hardware_profile_id/fallback_policy
+- `GET /api/settings/model` and `PUT /api/settings/model` — read-only and persistent save
+- Resolution hierarchy: `node → workflow → global`; fallback locked to `explicit_only`
+- Nanbeige selections fail with `nanbeige_retired_from_workspace`
+- Unknown models fail closed; exact Ollama inventory required before save
+
+**Control Center model selector (frontend):**
+- Installed Ollama model dropdown · hardware profile selector · Save button
+- Persistent saved/default badge · inline resolution path explanation
+
+**Nanbeige retired from M⊕ surfaces:**
+- `_nanbeige_output()` removed from graph.py · `_lfm_output()` removed
+- `nanbeige-rtx2070-super` runtime profile removed · replaced by `ollama-local-models`
+- `local-nanbeige` endpoint profile removed · Nanbeige from MODEL_OPTIONS and provider choices removed
+- Nanbeige from static library routes, workflow templates, and planner/coder defaults
+- Nanbeige readiness indicators in Canvas replaced by `model_ready` from global setting
+- Nanbeige vars removed from `START_BACKEND.cmd` and `backend/.env.example`
+- `active_hardware_lane` schema default renamed `shared-rtx-2070-super → ollama-auto`
+
+**Option registry (`backend/options_registry.py`, 268 lines):**
+- `model.endpoint_profile` default: `local-nanbeige → local-ollama`
+- `model.exact_model_id`: now `ready`, scope expanded to `global`, default set to exact LFM Q4_K_M tag
+- 39 options · 20 node contracts · 33 control surfaces
+- Read-only API at `GET /api/options` and `GET /api/options/export.md`
+- `OptionCatalogPanel.tsx` mounted in workspace panels with category filter + search + export
+
+**Verification receipts:**
+- Backend: 26/26 tests pass (70s) — includes new registry validation and DB isolation tests
+- Backend health: `model_provider=ollama, model=LFM2.5-2.6B..., model_ready=true, model_persisted=true`
+- Model saved to database: `mutation=workspace_model_setting_saved, updated_at=2026-08-07T18:51:51`
+- Ollama preflight: exact match confirmed on live service at 127.0.0.1:11434
+- Generation smoke: 6.8s · model responds (ablation — minimal chat template)
+
+**Commit:** `c69c3ff` — "feat: retire Nanbeige from M⊕, add LFM2.5-2.6B Q4_K_M as global default"
+**Files:** 26 files, +903 −512 lines
+**PR #1:** body refreshed with Phase 27 receipt
+**Deployment:** Backend PID 75316 at `http://127.0.0.1:8000`, frontend live at `http://127.0.0.1:3000`
+
+**NOT done / still pending:**
+- Real model generation smoke (ablation model — minimal template, needs different model for full acceptance)
+- Frontend build verification (`npm run typecheck && npm run build`)
+- Tracker README and roadmap docs update with Phase 27 changes
+- Tracker section 1 status update
+
+**Scope for next session:** Real model acceptance with a chat-capable model; README sync; frontend build; tracker finalization.
 
 - **Direction received:** Drew asked for a complete current-state read and continued forward progress with detailed Markdown. The existing option-complete roadmap is therefore the active specification; this session is authorized to continue Phase 0 parent-only implementation without restarting the design.
 - **Repository truth:** local and remote source baseline remain synchronized at `2999857abe9645e4986d43e10e78864d86db1d68`. Dirty scope before this checkpoint is documentation-only: new `M_PLUS_OPTION_COMPLETE_ROADMAP.md`, modified `PROJECT_TRACKER.md`, and modified `README.md`.
