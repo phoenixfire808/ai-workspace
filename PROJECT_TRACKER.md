@@ -1402,3 +1402,13 @@ Drew wants a canvas node that can take one larger request, decompose it into use
 - **Import-isolation defect:** tests set `WORKSPACE_DATABASE_URL`, but current `backend/database.py` only reads `WORKSPACE_DB_PATH` and unconditionally constructs SQLite `DATABASE_URL`. Phase 0 must support one explicit database URL or guarantee every test sets the path before importing `backend.main`; acceptance will prove standalone and combined discovery isolation.
 - **Execution packet:** parent owns the option registry, database/schema/capability integration, focused tests, minimal read-only UI, exact-ID cleanup from a verified backup, final acceptance, deployment, and publication. No worker or sibling writer is active or authorized in this ledger.
 - **Safety boundary:** documentation publication is allowed. Data cleanup is limited to a byte-verified database backup plus exact IDs only. No wildcard profile deletion, provider/cloud action, model/device mutation, feedback publication, public retrieval, microphone/TTS action, worker dispatch, or upgrade activation is authorized by Phase 0.
+
+**Phase 28 — Async LLM hang fix:**
+- `astream_events()` + `ainvoke()` hang inside FastAPI async loop
+- Replaced with synchronous `iter_lfm_events()` in ThreadPoolExecutor (~2 s LLM call, acceptable for HITL loop)
+- Added `POST /api/chat/sync` for plain JSON HITL responses
+- Added `POST /api/debug/llm-test` for isolated LLM hang diagnostics  
+- Removed stale `@lru_cache` from `get_lfm_workflow()` causing stale model binding
+- Fixed SSE `run_started` event to use resolved LFM model ID
+- Compile: OK | Tests: RC 0 | Push: 5fee07c → origin/feat/shared-nanbeige-agentic-workspace
+- PR #1 body updated with Phase 28 receipt
