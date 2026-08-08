@@ -712,9 +712,29 @@ async def execute_workflow(payload: RunPayload) -> EventSourceResponse:
     )
 
 
-@app.post("/api/chat/stream")
-async def chat_stream(payload: ChatStreamPayload) -> EventSourceResponse:
-    """Stream the opt-in LFM agent/tool loop without altering canvas execution."""
+@app.post("/api/debug/llm-test")
+async def debug_llm_test():
+    """Isolate LLM hang — ThreadPoolExecutor runs invoke() in a real OS thread."""
+    from concurrent.futures import ThreadPoolExecutor
+    from .agent_engine import get_lfm_llm, _lfm_model
+
+    model = _lfm_model()
+
+    def _call():
+        llm = get_lfm_llm()
+        return llm.invoke([HumanMessage(content="What is 2+2? Reply with just the number.")])
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        result = await asyncio.get_event_loop().run_in_executor(pool, _call)
+    return {"model": model, "content": result.content}
+
+
+@app.post("/api/chat/sync")
+async def chat_sync(payload: ChatStreamPayload):
+    """Synchronous HITL agent — runs in thread, returns plain JSON."""
+    from concurrent.futures import ThreadPoolExecutor
+    from .agent_engine import iter_lfm_events
+
     run_id = str(uuid.uuid4())
     approved_tools = [
         tool_name
@@ -731,55 +751,115 @@ async def chat_stream(payload: ChatStreamPayload) -> EventSourceResponse:
         run_id=run_id,
     )
 
+    def _run():
+        events = []
+        try:
+            for event in iter_lfm_events(state):
+                events.append(event)
+        except Exception as exc:
+            import traceback
+            events.append({"type": "error", "error": str(exc), "tb": traceback.format_exc()[:500]})
+        return events
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        events = await asyncio.get_event_loop().run_in_executor(pool, _run)
+
+    return {"run_id": run_id, "model": _lfm_model(), "events": events}
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(payload: ChatStreamPayload) -> EventSourceResponse:
+    """Run the HITL agent loop in a thread, then stream results as SSE.
+
+    The agent/tool loop runs synchronously in a ThreadPoolExecutor to avoid
+    blocking the async event loop. Results are collected as a list and then
+    streamed back as SSE — this sidesteps async-generator hangs in LangGraph.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from .agent_engine import iter_lfm_events
+
+    run_id = str(uuid.uuid4())
+    approved_tools = [
+        tool_name
+        for tool_name in payload.approved_tools
+        if tool_name in WORKSPACE_TOOL_NAMES
+    ]
+    state = initial_agent_state(
+        HumanMessage(content=payload.message),
+        workspace_root=str(WORKSPACE_ROOT),
+        project_id=payload.project_id,
+        active_hardware_lane=payload.active_hardware_lane,
+        approved_tools=approved_tools,
+        max_loops=payload.max_loops,
+        run_id=run_id,
+    )
+
+    def _collect():
+        events = []
+        try:
+            for event in iter_lfm_events(state):
+                events.append(event)
+        except Exception as exc:
+            import traceback
+            events.append({"type": "error", "error": str(exc), "tb": traceback.format_exc()[:500]})
+        return events
+
     async def event_stream():
+        # Run collection in thread pool (blocks ~2-3 s)
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            events = await loop.run_in_executor(pool, _collect)
+
+        # Stream run_started first
         sequence = 0
-        approval_required = False
-        loop_limit = False
-        tool_not_allowlisted = False
         yield {
             "id": f"{run_id}:0",
             "event": "run_started",
             "data": json.dumps({"run_id": run_id, "model": _lfm_model()}),
         }
-        try:
-            async for event in stream_lfm_events(state):
-                sequence += 1
-                if event.get("type") == "approval_required":
-                    approval_required = True
-                elif event.get("type") == "tool_not_allowlisted":
-                    tool_not_allowlisted = True
-                elif event.get("type") == "loop_limit":
-                    loop_limit = True
-                yield {
-                    "id": f"{run_id}:{sequence}",
-                    "event": str(event.get("type", "message")),
-                    "data": json.dumps({"run_id": run_id, **event}),
-                }
+
+        approval_required = False
+        tool_not_allowlisted = False
+        loop_limit = False
+
+        for event in events:
             sequence += 1
+            etype = event.get("type", "message")
+            if etype == "approval_required":
+                approval_required = True
+            elif etype == "tool_not_allowlisted":
+                tool_not_allowlisted = True
+            elif etype == "loop_limit":
+                loop_limit = True
+            elif etype == "error":
+                yield {
+                    "id": f"{run_id}:error",
+                    "event": "error",
+                    "data": json.dumps({"run_id": run_id, "error": event.get("error", "unknown")}),
+                }
+                return
             yield {
                 "id": f"{run_id}:{sequence}",
-                "event": "complete",
-                "data": json.dumps(
-                    {
-                        "run_id": run_id,
-                        "status": "awaiting_approval"
-                        if approval_required
-                        else "blocked"
-                        if tool_not_allowlisted
-                        else "loop_limit"
-                        if loop_limit
-                        else "completed",
-                    }
-                ),
+                "event": str(etype),
+                "data": json.dumps({"run_id": run_id, **event}),
             }
-        except Exception as exc:  # Keep failures bounded and model-content-free.
-            sequence += 1
-            error = _execution_error(exc)
-            yield {
-                "id": f"{run_id}:error",
-                "event": "error",
-                "data": json.dumps({"run_id": run_id, **error}),
-            }
+
+        # Final complete event
+        sequence += 1
+        status = (
+            "awaiting_approval"
+            if approval_required
+            else "blocked"
+            if tool_not_allowlisted
+            else "loop_limit"
+            if loop_limit
+            else "completed"
+        )
+        yield {
+            "id": f"{run_id}:{sequence}",
+            "event": "complete",
+            "data": json.dumps({"run_id": run_id, "status": status}),
+        }
 
     return EventSourceResponse(
         event_stream(),

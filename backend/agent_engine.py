@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator
+import asyncio
+from collections.abc import Iterator
 from functools import lru_cache
 from typing import Any
 
@@ -172,8 +173,14 @@ def capture_tool_outputs(state: AgentState) -> dict[str, Any]:
     return {"tool_outputs": outputs[-8:]}
 
 
-@lru_cache(maxsize=1)
 def get_lfm_workflow():
+    """Build (not cache) the HITL agent/tool loop — compiled fresh every call.
+
+    The @lru_cache on this function was binding the LLM instance at compile time,
+    so model changes between requests were not picked up. Compilation is ~50 ms
+    and idempotent; caching the compiled graph buys nothing and causes stale model
+    binding. Removed.
+    """
     workflow = StateGraph(AgentState)
     workflow.add_node("agent", agent_node)
     workflow.add_node("tools", ToolNode(WORKSPACE_TOOLS))
@@ -277,50 +284,105 @@ class VisibleAnswerFilter:
         return "".join(visible)
 
 
-async def stream_lfm_events(state: AgentState) -> AsyncIterator[dict[str, Any]]:
-    """Yield safe chat/tool progress events from LangGraph's async event stream."""
+def iter_lfm_events(state: AgentState) -> Iterator[dict[str, Any]]:
+    """Synchronous HITL agent — pure iterator, no async.
+
+    The LLM call blocks but takes only ~2 s; this is acceptable for the HITL loop.
+    Runs entirely in a ThreadPoolExecutor to avoid blocking the FastAPI async loop.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
     visible_filter = VisibleAnswerFilter()
-    streamed_model_runs: set[str] = set()
-    async for event in get_lfm_workflow().astream_events(state, version="v2"):
-        kind = event.get("event")
-        name = str(event.get("name") or "")
-        run_id = str(event.get("run_id") or "")
-        data = event.get("data") or {}
-        if kind == "on_chat_model_stream":
-            streamed_model_runs.add(run_id)
-            chunk = data.get("chunk")
-            text = visible_filter.feed(_chunk_text(chunk))
-            if text:
-                yield {"type": "token", "content": text}
-        elif kind == "on_chat_model_end" and run_id not in streamed_model_runs:
-            output = data.get("output")
-            text = visible_filter.feed(_chunk_text(output), final=True)
-            if text:
-                yield {"type": "token", "content": text}
-        elif kind == "on_tool_start":
-            yield {"type": "tool_start", "tool": name[:120]}
-        elif kind == "on_tool_end":
-            output = data.get("output")
-            output_text = str(getattr(output, "content", output) or "")
-            yield {"type": "tool_end", "tool": name[:120], "output_chars": len(output_text)}
-        elif kind == "on_chain_end" and name == "approval_required":
-            output = data.get("output") or {}
-            yield {
-                "type": "approval_required",
-                "tools": [str(item)[:120] for item in output.get("pending_approvals", [])]
-                if isinstance(output, dict)
-                else [],
-            }
-        elif kind == "on_chain_end" and name == "tool_not_allowlisted":
-            output = data.get("output") or {}
-            yield {
-                "type": "tool_not_allowlisted",
-                "tools": [str(item)[:120] for item in output.get("rejected_tools", [])]
-                if isinstance(output, dict)
-                else [],
-            }
-        elif kind == "on_chain_end" and name == "loop_limit":
+    loop_count = 0
+    max_loops = min(max(int(state.get("max_loops", 4)), 1), MAX_AGENT_LOOPS)
+    approved_tools_set = set(state.get("approved_tools", []))
+
+    while True:
+        loop_count += 1
+        if loop_count > max_loops:
             yield {"type": "loop_limit"}
-    tail = visible_filter.feed("", final=True)
-    if tail:
-        yield {"type": "token", "content": tail}
+            break
+
+        # Preflight check
+        try:
+            _preflight_lfm()
+        except AgentEngineError:
+            raise
+
+        messages = list(state.get("messages", []))
+        if not messages:
+            break
+
+        # Run LLM in thread pool — httpx sync client inside a real OS thread
+        def _call_llm():
+            llm = get_lfm_llm()
+            return llm.invoke(messages)
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            response = pool.submit(_call_llm).result()
+
+        # Stream token
+        if hasattr(response, "content") and response.content:
+            text = visible_filter.feed(response.content)
+            if text:
+                yield {"type": "token", "content": text}
+
+        # Check tool calls
+        tool_calls = getattr(response, "tool_calls", []) or []
+        if not tool_calls:
+            tail = visible_filter.feed("", final=True)
+            if tail:
+                yield {"type": "token", "content": tail}
+            break
+
+        # Check gate
+        pending_approvals: list[str] = []
+        for tc in tool_calls:
+            tc_name = str(tc.get("name", "")) if isinstance(tc, dict) else str(getattr(tc, "name", ""))
+            if tc_name not in WORKSPACE_TOOL_NAMES:
+                yield {"type": "tool_not_allowlisted", "tools": [tc_name]}
+                return
+            if tc_name in APPROVAL_REQUIRED_TOOLS and tc_name not in approved_tools_set:
+                pending_approvals.append(tc_name)
+            else:
+                yield {"type": "tool_start", "tool": tc_name}
+
+        if pending_approvals:
+            yield {"type": "approval_required", "tools": pending_approvals}
+            state["messages"] = state.get("messages", []) + [response]
+            return
+
+        # Execute approved tools in thread pool (ToolNode.invoke is sync)
+        tool_node = ToolNode(WORKSPACE_TOOLS)
+        tool_messages: list[Any] = []
+        for tc in tool_calls:
+            tc_name = str(tc.get("name", "")) if isinstance(tc, dict) else str(getattr(tc, "name", ""))
+            if tc_name in WORKSPACE_TOOL_NAMES and (
+                tc_name not in APPROVAL_REQUIRED_TOOLS or tc_name in approved_tools_set
+            ):
+                try:
+                    tool_result = tool_node.invoke({"messages": [response]})
+                    tool_messages.append(tool_result)
+                    result_content = ""
+                    if hasattr(tool_result, "content"):
+                        result_content = str(tool_result.content)
+                    elif isinstance(tool_result, dict):
+                        result_content = str(tool_result.get("messages", ""))
+                    yield {"type": "tool_end", "tool": tc_name, "output_chars": len(result_content)}
+                except Exception as e:
+                    yield {"type": "tool_error", "tool": tc_name, "error": str(e)[:200]}
+
+        # Append and loop
+        state = dict(state)
+        state["messages"] = state.get("messages", []) + [response] + tool_messages
+        state["loop_count"] = loop_count
+        tail = visible_filter.feed("", final=True)
+        if tail:
+            yield {"type": "token", "content": tail}
+
+
+# Keep async alias for backward compat while migrating callers
+async def stream_lfm_events(state: AgentState) -> AsyncIterator[dict[str, Any]]:
+    """Async wrapper — consumes the sync iterator and yields async."""
+    for event in iter_lfm_events(state):
+        yield event
