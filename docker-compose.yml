@@ -1,0 +1,127 @@
+name: mo-ai-workspace
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: mo-ollama
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${OLLAMA_HOST_PORT:-11434}:11434"
+    environment:
+      OLLAMA_HOST: "0.0.0.0:11434"
+      OLLAMA_KEEP_ALIVE: "${OLLAMA_KEEP_ALIVE:-10m}"
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_LLM_LIBRARY: "${OLLAMA_LLM_LIBRARY:-cuda_v12}"
+    volumes:
+      - "${OLLAMA_DATA_DIR:-./docker/ollama-data}:/root/.ollama"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  ollama-model:
+    image: ollama/ollama:latest
+    container_name: mo-ollama-model-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: "http://ollama:11434"
+      OLLAMA_MODEL: "hf.co/mradermacher/LFM2.5-2.6B-UNCENSORED-ABLITERATED-PHILADELPHIA-CLASS-GGUF:Q4_K_M"
+    volumes:
+      - "${OLLAMA_DATA_DIR:-./docker/ollama-data}:/root/.ollama"
+    command: ["pull", "hf.co/mradermacher/LFM2.5-2.6B-UNCENSORED-ABLITERATED-PHILADELPHIA-CLASS-GGUF:Q4_K_M"]
+    restart: "no"
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: mo-searxng
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${SEARXNG_HOST_PORT:-8888}:8080"
+    volumes:
+      - "${SEARXNG_CONFIG_DIR:-./docker/searxng-config}:/etc/searxng:ro"
+      - searxng_cache:/var/cache/searxng
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/', timeout=5)"]
+      interval: 15s
+      timeout: 8s
+      retries: 12
+      start_period: 20s
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: mo-backend
+    restart: unless-stopped
+    init: true
+    depends_on:
+      ollama-model:
+        condition: service_completed_successfully
+    environment:
+      WORKSPACE_ROOT: /workspace
+      WORKSPACE_DATABASE_URL: sqlite:////workspace/backend/workspace.db
+      WORKSPACE_CORS_ORIGINS: "http://localhost:${FRONTEND_HOST_PORT:-3000},http://127.0.0.1:${FRONTEND_HOST_PORT:-3000}"
+      WORKSPACE_MODEL_PROVIDER: ollama
+      WORKSPACE_MODEL_TIMEOUT_SECONDS: "180"
+      WORKSPACE_DOCKER_MODE: "1"
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: "hf.co/mradermacher/LFM2.5-2.6B-UNCENSORED-ABLITERATED-PHILADELPHIA-CLASS-GGUF:Q4_K_M"
+      SEARXNG_URL: http://searxng:8080
+      SEARXNG_PREFLIGHT_TIMEOUT_SECONDS: "5"
+    volumes:
+      - .:/workspace
+    ports:
+      - "127.0.0.1:${BACKEND_HOST_PORT:-8000}:8000"
+    networks:
+      - default
+    command: ["python", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
+      interval: 10s
+      timeout: 8s
+      retries: 18
+      start_period: 20s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: "http://127.0.0.1:${BACKEND_HOST_PORT:-8000}"
+    container_name: mo-frontend
+    restart: unless-stopped
+    init: true
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+    ports:
+      - "127.0.0.1:${FRONTEND_HOST_PORT:-3000}:3000"
+    command: ["npm", "run", "start", "--", "--hostname", "0.0.0.0", "--port", "3000"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 8s
+      retries: 12
+      start_period: 15s
+
+volumes:
+  searxng_cache:
+    name: mo-searxng-cache
+
+networks:
+  default:
+    name: mo-ai-workspace_default

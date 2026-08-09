@@ -13,6 +13,7 @@ backend/*.db
 .env
 .env.*
 !.env.example
+!.env.docker.example
 backend/.env
 frontend/.env
 frontend/.env.local
