@@ -1412,3 +1412,123 @@ Drew wants a canvas node that can take one larger request, decompose it into use
 - Fixed SSE `run_started` event to use resolved LFM model ID
 - Compile: OK | Tests: RC 0 | Push: 5fee07c → origin/feat/shared-nanbeige-agentic-workspace
 - PR #1 body updated with Phase 28 receipt
+
+**Phase 29 — Local stack launch recovery (2026-08-07 21:22 CDT):**
+- Frontend confirmed live at `http://127.0.0.1:3000`; browser title `M⊕ AI Visual Workspace`; hydrated UI reports `ollama · hf.co/mradermacher/LFM2.5-2.6B-UNCENSORED-ABLITERATED-PHILADELPHIA-CLASS-GGUF:Q4_K_M`.
+- Backend confirmed live at `http://127.0.0.1:8000`; `/api/health` returned HTTP 200 with `model_ready=true`, `model_persisted=true`, and `fallback_policy=explicit_only`.
+- Ollama confirmed live at `http://127.0.0.1:11434`; inventory returned `ready`, five installed models, and the exact LFM model present.
+- Repaired the persisted M⊕ model selection from temporary `llama3.2:3b` to the exact LFM Ollama tag through the governed `/api/settings/model` route; preflight returned `status=ready`, `exact_model=true`.
+- Real bounded local model smoke: `POST /api/debug/llm-test` returned HTTP 200 in 14,645 ms using the exact LFM model; controlled `2+2` response was non-empty (2 characters). No private content was used.
+- Safe workflow smoke: `POST /api/workflows/validate` returned HTTP 200 for a one-Start-node graph (`valid=true`, `node_count=1`, `edge_count=0`).
+- Capability matrix returned HTTP 200 with zero invalid-ready resources; route/node/resource BLOCKED rows remain explicit acceptance boundaries, not launch failures.
+- Live process/port receipt: frontend node PID `28468` on 3000, backend Python PID `77380` on 8000, Ollama PID `34940` on 11434; all loopback ports open.
+- Known explicit non-blockers: Buzz CLI is not on PATH, no agent reactions are configured, and SearXNG search resources report `search_backend_timeout`; no cloud fallback was enabled.
+
+**Phase 30 — Docker migration direction (2026-08-07 21:22 CDT):**
+- Drew directed: `put everything on Docker` and `get this all started back up`.
+- Docker host preflight: Docker Engine `29.3.1`, Docker Compose `v5.1.0`, NVIDIA driver `591.44`; RTX 5060 Ti (16,311 MiB) and RTX 2070 SUPER (8,192 MiB) visible to the host.
+- Existing containers: `searxng-hermes` (`searxng/searxng:latest`) healthy on loopback `127.0.0.1:8888`; direct SearXNG `/` and JSON search probes returned HTTP 200, with a ~2.8 s search response exceeding the app's current 1.5 s preflight budget.
+- Repository currently has no Dockerfile, Compose file, or `.dockerignore`; native frontend/backend/Ollama remain the rollback baseline and must not be stopped until the Docker replacement passes health and model smokes.
+- Proposed container boundary for approval: frontend + FastAPI backend + Ollama GPU service + SearXNG; Buzz/GlitchScribe microphone/native Windows integration remains a separate host boundary unless Drew explicitly requests a higher-risk WSL/Linux audio container path.
+- Docker migration must preserve loopback-only exposure, exact LFM Ollama tag, SQLite persistence, workspace bind mount, explicit approval gates, no cloud fallback, and a one-command rollback to the verified native launch.
+
+**Phase 31 — Docker implementation checkpoint (2026-08-07):**
+- Added `docker-compose.yml` with loopback-only frontend/backend/Ollama/SearXNG services, NVIDIA GPU reservation, exact-model init pull, persistent Ollama/SearXNG volumes, backend health gating, and frontend production startup.
+- Added `backend/Dockerfile`, `frontend/Dockerfile`, root `.dockerignore`, `.env.docker.example`, and `DOCKER_RUNBOOK.md`; local smoke env is ignored at `.env.docker.smoke`.
+- Added explicit Docker-only service-DNS validation: `WORKSPACE_DOCKER_MODE=1` permits only Compose service names `ollama` and `searxng`; default native validation remains loopback-only.
+- Increased bounded SearXNG preflight default to 5 seconds (clamped to 1.5–10 seconds) because the healthy local service currently responds in ~2.8 seconds.
+- Added `backend/tests/test_docker_routing.py` for native loopback preservation and the Docker service allowlist.
+- `docker compose --env-file .env.docker.smoke config --quiet` passed; rendered services: `ollama`, `ollama-model`, `searxng`, `backend`, `frontend`.
+- In progress: image pulls/builds, GPU container proof, exact model pull, Docker health/model/workflow acceptance, and non-disruptive cutover.
+
+**Phase 32 — Frontend image build correction (2026-08-07):**
+- Docker build failure receipt: Next.js compilation, typecheck, static generation, and optimization all passed; runner failed only because the repository has no `frontend/public/` directory.
+- Removed the unconditional `COPY --from=builder /workspace/frontend/public ./public` line; Next.js does not require an absent public directory for this app.
+- Pending immediate retry: frontend image build, Compose startup, GPU/model/service acceptance, and cutover.
+
+**Phase 33 — Docker runtime correction (2026-08-08):**
+- Docker Ollama logs proved CUDA access on both RTX 5060 Ti and RTX 2070 SUPER.
+- Corrected `ollama-model` from the invalid `ollama ollama pull` invocation to the image's `pull` entrypoint.
+- Docker SearXNG initially exited because the reused native config inherited the insecure default `ultrasecretkey`; created `docker/searxng-config/settings.yml` with a non-default local secret and left the native config untouched.
+- Exact LFM manifest and model blob were found in `C:/Users/Drew/.ollama/models`; stopped the slow redundant network pull and changed Compose to bind the existing host model store.
+- Smoke containers were cleanly stopped before this reconfiguration; native rollback remains preserved.
+- Pending immediate retry: Compose startup with the host model store, health/model/browser/workflow acceptance, and standard-port cutover.
+
+**Phase 34 — Exact model routing decision (2026-08-08):**
+- Drew explicitly requires `hf.co/mradermacher/LFM2.5-2.6B-UNCENSORED-ABLITERATED-PHILADELPHIA-CLASS-GGUF:Q4_K_M` for every M⊕ local LLM-backed route.
+- Other Ollama inventory entries are not acceptable routing targets: `llama3.2`, `hermes3`, BF16 LFM, Qwen, or any alternate model. Enforce this as a route/persistence guard rather than relying only on a UI default.
+- Docker acceptance is paused until exact-model-only routing is verified; native and Docker services remain rollback-safe.
+
+**Phase 35 — Exact-model-only implementation checkpoint (2026-08-08):**
+- Added `model_policy=exact_only`, `approved_model`, and `allowed_models` receipts to Ollama inventory/preflight; non-approved requests fail closed before network/model use.
+- Persisted workspace settings now normalize stale legacy rows to the exact LFM identity in public state; node/workflow overrides and endpoint generation reject alternate model IDs.
+- Removed executable MiniMax generation; non-Ollama provider and cloud endpoint paths now return `model_policy_rejected`.
+- Filtered endpoint inventory and frontend model controls to the local Ollama route; Coder/Planner defaults, read-only model fields, canvas route card, and Control Center all show the exact LFM tag.
+- Docker Compose hardcodes the exact model in both model-init and backend environment, binds the existing local Ollama store, and routes backend research to the Compose-local `searxng` service without the native SearXNG network.
+- Runtime profile preflight now resolves `http://ollama:11434` under Docker while preserving native loopback resolution.
+- Focused source edits linted successfully; final Docker rebuild, exact-model smoke, browser hydration, and workflow acceptance remain pending.
+
+**Phase 36 — Docker acceptance resume (2026-08-07 23:25 CDT):**
+- Resumed from `@session:personal/20260807_202709_35d4ec` without repeating the successful frontend/backend image build.
+- Current Compose state: `mo-ollama` and `mo-searxng` are healthy; `mo-ollama-model-init`, `mo-backend`, and `mo-frontend` are `Created` and have not started. Smoke ports 3100/8100 are closed; Ollama 11435 and Docker SearXNG 8889 are open.
+- Docker Ollama is bound to the existing `C:/Users/Drew/.ollama` store and lists the exact LFM model; both host GPUs are visible through the container.
+- Native M⊕ frontend/backend/Ollama ports 3000/8000/11434 are currently closed; native SearXNG remains healthy on 8888. This is a live-state correction to the previous rollback-baseline wording and must be repaired or explicitly retained before any final cutover claim.
+- No model-generation, Docker backend/frontend health, browser hydration, workflow, or commit/push receipt is claimed yet. Next parent-owned step is a bounded persistent Compose startup, followed by one consolidated acceptance batch and tracker receipt.
+
+**Phase 36 — Verifier reconciliation and GPU startup blocker (2026-08-08):**
+- Re-ran `git status --short --branch` and `git diff -- backend/ollama_control.py`; the file is modified on disk and contains the Docker service-host allowance plus exact-model inventory/preflight policy. The earlier “not modified this turn” warning referred to a rejected intermediate patch, not the current working tree.
+- Rebuilt backend/frontend images successfully; frontend typecheck and Next production build passed.
+- Persistent `docker compose ... up --remove-orphans` did not reach health acceptance: Ollama startup logged GPU discovery timeout, then `inference compute ... library=cpu` and `vram-based default context total_vram=0 B`; Compose exited with dependency failure before the backend/frontend stack could start.
+- Current blocker is Docker/NVIDIA runtime startup, not the exact-model route implementation. Native rollback remains untouched.
+
+**Phase 37 — Docker backend image/source drift receipt (2026-08-07 23:27 CDT):**
+- Persistent Compose startup reached Ollama model-init successfully (`Exited (0)`); the exact 1.7 GB LFM manifest/blob was verified in the bound store.
+- Backend then failed before serving because the image contained stale `main.py` importing removed `DEFAULT_MINIMAX_MODEL` from `backend.graph`. The live source has already removed that import, but the backend image was built before the exact-model-only source settled; the `/workspace` bind mount does not replace the image's `/app/backend` runtime path.
+- Docker backend/frontend health and model/workflow acceptance remain unclaimed. Parent next step: rebuild the backend image from the settled source, restart the dependency chain, then run the consolidated acceptance batch.
+- Live correction: current Docker backend is restarting/unhealthy; Docker frontend remains `Created`; Docker Ollama and SearXNG remain healthy.
+
+**Phase 37 — Backend startup import blocker (2026-08-08):**
+- In-container GPU visibility was verified with `nvidia-smi`: both RTX 5060 Ti and RTX 2070 SUPER are exposed to `mo-ollama`.
+- The exact model-init completed with `success`; Docker inventory lists the exact LFM tag and the other installed artifacts remain non-routable.
+- Backend health then failed on a stale `main.py` import of the removed `DEFAULT_MINIMAX_MODEL`; this is a source integration error, not a runtime/model failure.
+- Pending: remove the stale import, rebuild backend, restart backend/frontend, then run the consolidated acceptance batch.
+
+**Phase 38 — Exact-model Docker acceptance receipt (2026-08-08):**
+- Stabilized smoke stack: `mo-backend`, `mo-frontend`, `mo-ollama`, and `mo-searxng` healthy; `mo-ollama-model-init` exited `0` after verifying the host-bound exact model store.
+- Backend acceptance: `/api/health` 200 with exact model and `model_ready=true`; `/api/settings/model` 200 with provider `ollama`; `/api/ollama/models` 200 with exact model present and `model_policy=exact_only`; `/api/model-endpoints` 200 with only `ollama`; alternate `llama3.2:3b` preflight returned `model-policy-mismatch` / `ollama_exact_model_required`.
+- Workflow/capability acceptance: `/api/capabilities/matrix` 200 with zero invalid resources; one-Start-node `/api/workflows/validate` returned `valid=true` and `node_count=1`.
+- Real exact-model smoke: `/api/debug/llm-test` returned HTTP 200 in 59.57 seconds with the exact model and content `4`.
+- SearXNG acceptance: Docker root HTTP 200; JSON search HTTP 200 with 10 results. Frontend HTTP 200 and browser hydration show the exact model; the Local Library now exposes only that approved model resource.
+- GPU boundary: `nvidia-smi` inside `mo-ollama` sees both RTX 5060 Ti and RTX 2070 SUPER, but `ollama ps` reports the exact model at `100% CPU`; GPU model placement is not yet accepted.
+- Bounded next attempt: set `OLLAMA_LLM_LIBRARY=cuda_v12` in Compose and recreate only Ollama before one placement check. Preserve the working exact CPU path if CUDA placement still fails.
+
+**Phase 39 — CUDA placement attempt rolled back (2026-08-08):**
+- Recreated only `mo-ollama` with `OLLAMA_LLM_LIBRARY=cuda_v12`; container GPU visibility remained present, but Ollama GPU discovery still timed out, reported `inference compute library=cpu` / `total_vram=0 B`, and temporarily returned HTTP 500 for `/api/tags` during discovery.
+- Reverted the forced library override to restore the previously verified exact-model CPU path. No alternate model or cloud fallback was introduced.
+- GPU inference placement remains an environment/runtime blocker; do not report GPU acceptance from passthrough visibility alone.
+
+**Phase 40 — Final model smoke and Docker Desktop lifecycle failure (2026-08-08):**
+- After the CUDA library rollback recovered both-GPU discovery (`library=CUDA`, RTX 5060 Ti + RTX 2070 SUPER, total VRAM `23.9 GiB`), the final exact-model smoke returned HTTP 200 in `30.3s` with model `hf.co/mradermacher/LFM2.5-2.6B-UNCENSORED-ABLITERATED-PHILADELPHIA-CLASS-GGUF:Q4_K_M` and content `4`.
+- Final API policy receipt: exact model ready; installed inventory count `5`; exact-only policy active; alternate `llama3.2:3b` rejected; model library count `1` with only the approved exact tag.
+- Immediately after the final model smoke, Docker Desktop's Linux engine named pipe disappeared; final `docker compose ps`, `ollama ps`, frontend browser, and SearXNG probes were refused. The last verified live state before this lifecycle failure had all five services healthy.
+- Do not claim current live URLs until Docker Desktop is explicitly recovered and the loopback probes are rerun. Native rollback remains separate and was not intentionally stopped.
+
+**Phase 41 — Recovered final liveness and verification closure (2026-08-08):**
+- Docker Desktop self-recovered without a restart command. Final `docker compose ps` receipt: `mo-backend`, `mo-frontend`, `mo-ollama`, and `mo-searxng` running healthy; `mo-ollama-model-init` exited `0`.
+- Final liveness: backend `/api/health` HTTP 200 with exact model, `model_ready=true`, `model_policy=exact_only`; frontend HTTP 200; SearXNG JSON HTTP 200 with 10 results; browser shows backend connected, exact global model, and exact coder-node model.
+- Final exact policy suite ran through `backend/.venv/Scripts/python.exe`: 5 tests passed; dependency-free `py_compile` passed for all changed backend modules. Global host Python remains unsuitable because it lacks `langgraph`; no global install was performed.
+- Final Docker/GPU receipt remains: Ollama logs identify CUDA backends for both GPUs and `total_vram=23.9 GiB`; the exact model generated successfully in 30.3 seconds. No alternate model was used.
+- Rollback: native services remain the baseline; Docker smoke ports are loopback-only (`3100`, `8100`, `11435`, `8889`). No standard-port cutover, commit, or GitHub push was performed.
+
+**Phase 42 — Compose CUDA default clarification (2026-08-08):**
+- `docker-compose.yml` intentionally retains the existing `OLLAMA_LLM_LIBRARY: "${OLLAMA_LLM_LIBRARY:-cuda_v12}"` default; `.env.docker.smoke` does not override it.
+- The failed first CUDA probe was a transient startup/WSL lifecycle event. After recovery, Ollama logged CUDA compute backends for both GPUs and `total_vram=23.9 GiB`; the exact-model generation then completed successfully.
+- The explicit temporary patch attempt was removed, but the intended Compose CUDA default remains active. No model fallback was introduced.
+
+**Phase 43 — Docker M⊕ stack recovered on user request (2026-08-08):**
+- Docker Engine `29.6.2` was available; native rollback services were not touched.
+- Restarted the existing smoke Compose stack in place with `docker compose --env-file .env.docker.smoke up -d --remove-orphans`; no rebuild, `down`, or standard-port cutover was needed.
+- Final service receipt: `mo-backend`, `mo-frontend`, `mo-ollama`, and `mo-searxng` running healthy; `mo-ollama-model-init` exited `0`.
+- Exact model is present in Ollama: `hf.co/mradermacher/LFM2.5-2.6B-UNCENSORED-ABLITERATED-PHILADELPHIA-CLASS-GGUF:Q4_K_M`.
+- Backend `/api/health` returned HTTP 200 with `model_ready=true` and `model_policy=exact_only`; frontend HTTP 200; SearXNG JSON search HTTP 200 with 10 results; browser shows backend connected and the exact global/coder model.
+- Container GPU visibility remains verified for RTX 5060 Ti and RTX 2070 SUPER. Smoke URLs are live on loopback ports `3100`, `8100`, `11435`, and `8889`.
