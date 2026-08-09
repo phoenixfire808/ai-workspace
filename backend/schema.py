@@ -1,0 +1,110 @@
+from __future__ import annotations
+
+import operator
+from typing import Annotated, Any, Literal, NotRequired, Sequence, TypedDict
+
+from langchain_core.messages import BaseMessage
+from pydantic import BaseModel, ConfigDict, Field
+
+
+NodeType = Literal["start", "buzz", "tts", "planner", "coder", "file", "task", "agent", "tool", "runtime", "review", "chat", "split", "merge", "context", "plugin", "delegate", "search", "research", "source_context"]
+ApprovalPolicy = Literal["preflight", "per_action", "step_through"]
+BranchMode = Literal["parallel", "sequential", "conditional", "chunked"]
+NODE_ID_PATTERN = r"^[A-Za-z][A-Za-z0-9_-]{0,119}$"
+EDGE_ID_PATTERN = r"^[A-Za-z][A-Za-z0-9_-]{0,159}$"
+
+
+class AgentState(TypedDict):
+    """Persistent state for the opt-in cyclic local agent loop."""
+
+    # The reducer appends messages across agent/tool turns instead of overwriting history.
+    messages: Annotated[Sequence[BaseMessage], operator.add]
+    workspace_root: str
+    project_id: str | None
+    pending_approvals: list[str]
+    active_hardware_lane: str
+    approved_tools: NotRequired[list[str]]
+    tool_outputs: NotRequired[list[str]]
+    rejected_tools: NotRequired[list[str]]
+    loop_count: NotRequired[int]
+    max_loops: NotRequired[int]
+    last_error: NotRequired[str | None]
+    run_id: NotRequired[str]
+
+
+class GraphNode(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str = Field(min_length=1, max_length=120, pattern=NODE_ID_PATTERN)
+    type: NodeType
+    position: dict[str, float] = Field(default_factory=lambda: {"x": 0.0, "y": 0.0})
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphEdge(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str = Field(min_length=1, max_length=160, pattern=EDGE_ID_PATTERN)
+    source: str = Field(min_length=1, max_length=120, pattern=NODE_ID_PATTERN)
+    target: str = Field(min_length=1, max_length=120, pattern=NODE_ID_PATTERN)
+    label: str = Field(default="", max_length=120)
+    priority: int = Field(default=0, ge=-1000, le=1000)
+    condition: dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphDocument(BaseModel):
+    nodes: list[GraphNode] = Field(default_factory=list, max_length=80)
+    edges: list[GraphEdge] = Field(default_factory=list, max_length=160)
+    settings: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProjectPayload(BaseModel):
+    id: str | None = Field(default=None, max_length=64)
+    name: str = Field(min_length=1, max_length=120)
+    canvas_state: GraphDocument
+
+
+class RunPayload(BaseModel):
+    graph: GraphDocument
+    input_text: str = Field(default="", max_length=200_000)
+    project_id: str | None = Field(default=None, max_length=64)
+    approval_preview_id: str | None = Field(default=None, max_length=80)
+    approval_policy: ApprovalPolicy = "per_action"
+    max_parallel: int = Field(default=4, ge=1, le=8)
+    retain_context: bool = True
+
+
+class RunDecisionPayload(BaseModel):
+    decision: Literal["approve", "deny", "cancel", "edit"]
+    arguments: dict[str, Any] | None = None
+    note: str = Field(default="", max_length=4000)
+    approve_identical: bool = False
+
+
+class RunChatPayload(BaseModel):
+    content: str = Field(min_length=1, max_length=200_000)
+
+
+class ValidationPayload(BaseModel):
+    graph: GraphDocument
+
+
+class FeedbackPayload(BaseModel):
+    kind: Literal["bug", "feature"]
+    title: str = Field(min_length=3, max_length=240)
+    description: str = Field(min_length=1, max_length=20_000)
+    steps: str = Field(default="", max_length=20_000)
+    project_id: str | None = Field(default=None, max_length=64)
+    run_id: str | None = Field(default=None, max_length=64)
+
+
+class FeedbackPublishPayload(BaseModel):
+    confirmation: Literal["PUBLISH_TO_GITHUB"]
+
+
+class ChatStreamPayload(BaseModel):
+    message: str = Field(min_length=1, max_length=200_000)
+    project_id: str | None = Field(default=None, max_length=64)
+    active_hardware_lane: str = Field(default="ollama-auto", max_length=120)
+    approved_tools: list[str] = Field(default_factory=list, max_length=32)
+    max_loops: int = Field(default=4, ge=1, le=8)
