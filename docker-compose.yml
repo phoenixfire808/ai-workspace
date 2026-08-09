@@ -84,6 +84,36 @@ services:
       retries: 18
       start_period: 20s
 
+  harness:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: rws-harness
+    restart: unless-stopped
+    init: true
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      RWS_HARNESS_HOST: "0.0.0.0"
+      RWS_HARNESS_PORT: "8110"
+      RWS_HARNESS_OLLAMA_URL: http://host.docker.internal:11435/v1
+      RWS_HARNESS_MCP_URL: http://backend:8000/mcp
+      OLLAMA_MODEL: "hf.co/mradermacher/LFM2.5-2.6B-UNCENSORED-ABLITERATED-PHILADELPHIA-CLASS-GGUF:Q4_K_M"
+      RWS_HARNESS_TIMEOUT: "180"
+      RWS_HARNESS_MAX_TURNS: "4"
+    ports:
+      - "127.0.0.1:${HARNESS_HOST_PORT:-8110}:8110"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["python", "scripts/rws_local_harness.py"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8110/health', timeout=5)"]
+      interval: 10s
+      timeout: 8s
+      retries: 12
+      start_period: 15s
+
   frontend:
     build:
       context: .

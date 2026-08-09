@@ -11,6 +11,8 @@ RUN python -m pip install --upgrade pip && \
     python -m pip install -r /app/backend/requirements.txt
 
 COPY backend /app/backend
+COPY harness /app/harness
+COPY scripts /app/scripts
 
 EXPOSE 8000
 

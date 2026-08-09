@@ -4,16 +4,16 @@
 
 ## 1. Current status
 
-- **Phase:** Phase 46 — MCP agent bridge + expanded runnable workflow/template library.
-- **Status:** Refactor Workflow Studio is live on Docker smoke ports: frontend `:3100`, backend `:8100`, standalone SearXNG `:8888`, and Ollama `:11435`. The exact LFM model is loaded in VRAM; MCP discovery, resources, read-only tools, approval-gated sandbox execution, and approval-gated workflow-file create/edit/delete are verified end-to-end. Historical entries below preserve earlier state and original M⊕ references as written at the time.
+- **Phase:** Phase 48 — standalone stdlib-only local-model agent harness.
+- **Status:** Refactor Workflow Studio is live on Docker smoke ports: frontend `:3100`, backend `:8100`, standalone SearXNG `:8888`, Ollama `:11435`, and the isolated local harness `:8110`. The exact LFM model is loaded in VRAM; the harness independently completes plain local chat, discovers 14 MCP tools, executes safe web search, pauses mutations for approval, and resumes approved previews. Historical entries below preserve earlier state and original M⊕ references as written at the time.
 - **Workspace:** `C:\Users\Drew\Documents\Jarvis_Context\Projects\ai-workspace`
-- **Last verified:** 2026-08-09 15:39 CDT
-- **Current parent todo:** Release commits `09605c3` and `3ad782a` are pushed; Docker stack and browser preview are loaded for Drew testing
+- **Last verified:** 2026-08-09 16:14 CDT
+- **Current parent todo:** Phase 48 harness is live and acceptance-verified on `:8110`; commit/push and remote reconciliation are next
 - **Testing policy:** Focused checks + one consolidated verification pass at end of each session
 
 ### Immediate next action
 
-Keep the exact LFM model preloaded while Drew exercises the 24 templates and MCP client path. Preserve the approval-gated two-step contract for sandbox/code execution and workspace writes; do not expose arbitrary shell, secrets, or alternate models. After Drew approves the local commit/push receipt, reconcile any sibling changes before integration.
+Keep the exact LFM model preloaded while Drew exercises the dedicated `rws-harness` at `127.0.0.1:8110`. Preserve the MCP approval-gated two-step contract for sandbox/code execution and workspace writes; do not expose arbitrary shell, secrets, or alternate models. Keep the harness stdlib-only and separate from the UI/LangGraph runtime until streaming or persistent memory is explicitly added.
 
 ## 1.1 Proposed LFM2.5-2.6B agent-engine upgrade
 
@@ -1552,3 +1552,13 @@ Drew wants a canvas node that can take one larger request, decompose it into use
 - Added `scripts/rws_workflow_cli.py` (ACLI): external coding agents can list 24 workflow ideas, inspect files, use local SearXNG, create/patch/delete workflow files, and run bounded Python through MCP. Writes/code execution require `--approve` and preserve preview/preimage gates.
 - ACLI verification passed: 24 ideas listed, exact model health reported at `2,419,494,747` VRAM bytes, and approved sandbox returned `5`.
 - Latest Docker backend is loaded and the Refactor Workflow Studio preview was refreshed at `http://127.0.0.1:3100/`.
+
+**Phase 48 — standalone lightweight local-model agent harness (2026-08-09):**
+- Added `harness/lightweight_agent.py`, a stdlib-only bounded agent loop with direct Ollama `/v1/chat/completions`, MCP tool-schema discovery, safe-by-default tools, exact-model routing, bounded turns, and redacted JSON lifecycle logs.
+- Added `scripts/rws_local_harness.py` with loopback HTTP endpoints: `/health`, `/tools`, `/v1/models`, `/run`, and `/resume`. Pending approvals are in-memory and bounded; restart intentionally clears them.
+- Added `rws-harness` to Docker Compose on `127.0.0.1:8110`, isolated from the UI/backend process while sharing the existing Ollama model and MCP policy bridge. The image contains no new dependency; the harness reports `python-stdlib-only`.
+- Preserved the existing MCP mutation contract: model-requested writes produce a preview and diff first; only explicit approval consumes `_preview_id` + `_approved=true`. No duplicate workspace policy was introduced.
+- Added `backend/tests/test_lightweight_harness.py`; focused tests cover JSON tool-call parsing, read-only continuation, mutation preview/resume, and explicit mutation approval.
+- Live acceptance passed: harness `/health` ready with exact model advertised and 14 MCP tools; plain response `HARNESS_OK`; safe `search_web` tool call executed; mutation returned approval preview without writing; explicit `/resume` wrote only after approval; temporary proof file was removed through guarded MCP.
+- Added `LIGHTWEIGHT_HARNESS_SPEC.md` with architecture, source research, safety boundaries, deployment contract, verification receipts, and next intentions.
+- Research note: local SearXNG returned the same unrelated WSJ result for five official-doc queries, so the selected five official sources were directly extracted and the discovery quality failure was recorded rather than silently using cloud search.
