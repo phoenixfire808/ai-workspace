@@ -8,7 +8,7 @@
 - **Status:** Refactor Workflow Studio is live on Docker smoke ports: frontend `:3100`, backend `:8100`, standalone SearXNG `:8888`, and Ollama `:11435`. The exact LFM model is loaded in VRAM; MCP discovery, resources, read-only tools, approval-gated sandbox execution, and approval-gated workflow-file create/edit/delete are verified end-to-end. Historical entries below preserve earlier state and original M⊕ references as written at the time.
 - **Workspace:** `C:\Users\Drew\Documents\Jarvis_Context\Projects\ai-workspace`
 - **Last verified:** 2026-08-09 14:20 CDT
-- **Current parent todo:** Phase 46 source/tests/tracker are complete locally; commit/push and PR update are next
+- **Current parent todo:** Release commit `09605c3` is verified locally; push and final remote reconciliation are next
 - **Testing policy:** Focused checks + one consolidated verification pass at end of each session
 
 ### Immediate next action
@@ -1542,7 +1542,7 @@ Drew wants a canvas node that can take one larger request, decompose it into use
 - Added `backend/tests/test_mcp_bridge.py`; final backend suite passed `22/22`, frontend `npm run typecheck` passed, Docker backend rebuilt/restarted healthy, SearXNG remained healthy, and exact LFM preload passed with `2,419,494,747` VRAM bytes and `30m` keep-alive.
 - Live MCP receipt: 14 tools, 3 resources, 24 templates, 45 library entries; approved sandbox returned `5`; guarded create → read → patch → read → delete workflow-file cycle passed and temporary artifact was removed through MCP.
 - Recovery note: the first smoke harness failed only because its assertion assumed every tool returned JSON; `read_workspace_file` correctly returns plain text. The test harness was corrected and the full acceptance batch rerun successfully.
-- Current source and tracker changes are local and ready for the approved commit/push reconciliation.
+- Release commit `09605c3` contains the source, tests, logging, ACLI, and tracker updates; final push reconciliation is in progress.
 
 **Phase 47 — Model/tool recovery, structured logging, and ACLI load test (2026-08-09):**
 - Reproduced the recurring chat failure as FastAPI HTTP 422: `payload` was incorrectly treated as a query parameter because `ChatStreamPayload` was missing from `backend/main.py` imports. Restored the schema import; `/api/chat/sync` now accepts JSON and returns HTTP 200.
