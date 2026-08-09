@@ -21,6 +21,7 @@ from .database import FeedbackItem, Project, SessionLocal, get_db, list_projects
 from .agent_engine import (
     DEFAULT_LFM_MODEL,
     AgentEngineError,
+    _lfm_model,
     initial_agent_state,
     stream_lfm_events,
 )
@@ -32,6 +33,7 @@ from .graph import (
     transcribe_audio,
     validate_graph,
 )
+from pydantic import BaseModel, Field
 from .schema import ChatStreamPayload, FeedbackPayload, FeedbackPublishPayload, ProjectPayload, RunChatPayload, RunDecisionPayload, RunPayload, ValidationPayload
 from .execution_runtime import (
     cancel_run,
@@ -46,6 +48,8 @@ from .runtime_control import list_runtime_profiles, preflight_runtime_profile
 from .plugins import plugin_catalog
 from .terminal_control import TerminalPreviewRequest, preview_terminal_command
 from .upgrade_control import upgrade_inventory, upgrade_preflight
+from .mcp_bridge import handle_request as mcp_handle_request
+from .observability import log_event, log_exception
 from .ollama_control import (
     DEFAULT_OLLAMA_BASE_URL,
     DEFAULT_OLLAMA_MODEL,
@@ -338,6 +342,34 @@ def ollama_unload(model: str) -> dict[str, Any]:
     query parameter for the same colon-in-tag reason.
     """
     return unload_ollama_model(model)
+
+
+class McpPayload(BaseModel):
+    jsonrpc: str = Field(default="2.0", max_length=8)
+    id: Any = Field(default=None)
+    method: str = Field(default="", max_length=64)
+    params: dict[str, Any] | None = Field(default=None)
+
+
+@app.post("/mcp")
+def mcp_endpoint(payload: McpPayload) -> dict[str, Any]:
+    """Model Context Protocol (MCP) endpoint.
+
+    Accepts a JSON-RPC 2.0 request and dispatches it to the workspace
+    + templates toolset. Supports the methods an MCP-aware client needs
+    to discover and drive the workspace from outside the UI:
+
+      initialize, ping
+      tools/list, tools/call
+      resources/list, resources/read
+      prompts/list, prompts/get
+
+    The exact-model and workspace-rooted policies are preserved — MCP
+    callers cannot bypass them. External agents calling
+    workspace mutation tools still get the same diff + preimage guards
+    the UI chat path uses.
+    """
+    return mcp_handle_request(payload.model_dump(mode="json"))
 
 
 @app.get("/api/settings/model")
@@ -784,6 +816,7 @@ async def chat_sync(payload: ChatStreamPayload):
     from .agent_engine import iter_lfm_events
 
     run_id = str(uuid.uuid4())
+    log_event("chat.sync.start", run_id=run_id, project_id=payload.project_id, max_loops=payload.max_loops, approved_tools=payload.approved_tools)
     approved_tools = [
         tool_name
         for tool_name in payload.approved_tools
@@ -806,7 +839,9 @@ async def chat_sync(payload: ChatStreamPayload):
                 events.append(event)
         except Exception as exc:
             import traceback
+            log_exception("chat.sync.error", exc, run_id=run_id)
             events.append({"type": "error", "error": str(exc), "tb": traceback.format_exc()[:500]})
+        log_event("chat.sync.complete", run_id=run_id, event_count=len(events), event_types=[item.get("type") for item in events])
         return events
 
     with ThreadPoolExecutor(max_workers=1) as pool:

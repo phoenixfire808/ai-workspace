@@ -16,6 +16,7 @@ from .schema import AgentState
 from .tools import APPROVAL_REQUIRED_TOOLS, WORKSPACE_TOOL_NAMES, WORKSPACE_TOOLS
 from .model_settings import get_workspace_model_setting
 from .ollama_control import DEFAULT_OLLAMA_BASE_URL, DEFAULT_OLLAMA_MODEL, preflight_ollama_model, safe_ollama_base_url
+from .observability import log_event, log_exception
 
 
 DEFAULT_LFM_MODEL = DEFAULT_OLLAMA_MODEL
@@ -46,7 +47,9 @@ def _lfm_model() -> str:
     model = str(setting.get("model") or DEFAULT_LFM_MODEL).strip()
     preflight = preflight_ollama_model(model)
     if preflight.get("status") != "ready" or preflight.get("exact_model") is not True:
+        log_event("model.selection.rejected", model=model, failure_class=str(preflight.get("failure_class") or "ollama_model_mismatch"))
         raise AgentEngineError("The selected workspace model is not installed in Ollama", str(preflight.get("failure_class") or "ollama_model_mismatch"))
+    log_event("model.selection.ready", model=model)
     return model
 
 
@@ -78,6 +81,7 @@ def _preflight_lfm() -> None:
     """Require the exact opt-in model before every agent generation."""
     base_url = _lfm_base_url()
     model = _lfm_model()
+    log_event("model.preflight.start", model=model, base_url=base_url)
     try:
         with httpx.Client(timeout=2.0, trust_env=False) as client:
             response = client.get(f"{base_url}/models")
@@ -94,6 +98,7 @@ def _preflight_lfm() -> None:
         raise AgentEngineError("The local LFM endpoint is unavailable", "lfm_unavailable") from exc
     except (httpx.HTTPError, TypeError, ValueError, AttributeError) as exc:
         raise AgentEngineError("The local LFM model inventory was invalid", "lfm_preflight_failed") from exc
+    log_event("model.preflight.inventory", model=model, advertised_count=len(model_ids), exact_advertised=model in model_ids)
     if model not in model_ids:
         raise AgentEngineError(
             "The configured LFM endpoint does not advertise the exact approved model",
@@ -315,64 +320,68 @@ def iter_lfm_events(state: AgentState) -> Iterator[dict[str, Any]]:
 
         # Run LLM in thread pool — httpx sync client inside a real OS thread
         def _call_llm():
-            llm = get_lfm_llm()
+            llm = get_lfm_llm().bind_tools(WORKSPACE_TOOLS)
             return llm.invoke(messages)
 
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            response = pool.submit(_call_llm).result()
+        log_event("agent.model.invoke", run_id=str(state.get("run_id", "")), loop=loop_count, message_count=len(messages), bound_tool_count=len(WORKSPACE_TOOLS))
+        try:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                response = pool.submit(_call_llm).result()
+        except Exception as exc:
+            log_exception("agent.model.error", exc, run_id=str(state.get("run_id", "")), loop=loop_count)
+            yield {"type": "error", "failure_class": "lfm_generation_failed", "error": str(exc)[:500]}
+            return
 
-        # Stream token
+        # Stream visible text; structured tool calls are handled below.
         if hasattr(response, "content") and response.content:
-            text = visible_filter.feed(response.content)
+            text = visible_filter.feed(response.content if isinstance(response.content, str) else str(response.content))
             if text:
                 yield {"type": "token", "content": text}
 
-        # Check tool calls
         tool_calls = getattr(response, "tool_calls", []) or []
+        tool_names = [str(tc.get("name", "")) for tc in tool_calls if isinstance(tc, dict)]
+        log_event("agent.model.response", run_id=str(state.get("run_id", "")), loop=loop_count, content_chars=len(str(getattr(response, "content", "") or "")), tool_calls=tool_names)
         if not tool_calls:
             tail = visible_filter.feed("", final=True)
             if tail:
                 yield {"type": "token", "content": tail}
             break
 
-        # Check gate
+        # Check gate before invoking any tool.
         pending_approvals: list[str] = []
         for tc in tool_calls:
             tc_name = str(tc.get("name", "")) if isinstance(tc, dict) else str(getattr(tc, "name", ""))
             if tc_name not in WORKSPACE_TOOL_NAMES:
+                log_event("agent.tool.rejected", run_id=str(state.get("run_id", "")), tool=tc_name, reason="not_allowlisted")
                 yield {"type": "tool_not_allowlisted", "tools": [tc_name]}
                 return
             if tc_name in APPROVAL_REQUIRED_TOOLS and tc_name not in approved_tools_set:
                 pending_approvals.append(tc_name)
-            else:
-                yield {"type": "tool_start", "tool": tc_name}
 
         if pending_approvals:
+            log_event("agent.approval.required", run_id=str(state.get("run_id", "")), tools=pending_approvals)
             yield {"type": "approval_required", "tools": pending_approvals}
             state["messages"] = state.get("messages", []) + [response]
             return
 
-        # Execute approved tools in thread pool (ToolNode.invoke is sync)
+        # Invoke ToolNode exactly once; it executes all structured calls and
+        # returns actual ToolMessage objects for the next model turn.
         tool_node = ToolNode(WORKSPACE_TOOLS)
-        tool_messages: list[Any] = []
-        for tc in tool_calls:
-            tc_name = str(tc.get("name", "")) if isinstance(tc, dict) else str(getattr(tc, "name", ""))
-            if tc_name in WORKSPACE_TOOL_NAMES and (
-                tc_name not in APPROVAL_REQUIRED_TOOLS or tc_name in approved_tools_set
-            ):
-                try:
-                    tool_result = tool_node.invoke({"messages": [response]})
-                    tool_messages.append(tool_result)
-                    result_content = ""
-                    if hasattr(tool_result, "content"):
-                        result_content = str(tool_result.content)
-                    elif isinstance(tool_result, dict):
-                        result_content = str(tool_result.get("messages", ""))
-                    yield {"type": "tool_end", "tool": tc_name, "output_chars": len(result_content)}
-                except Exception as e:
-                    yield {"type": "tool_error", "tool": tc_name, "error": str(e)[:200]}
+        try:
+            tool_result = tool_node.invoke({"messages": [response]})
+            emitted_messages = list(tool_result.get("messages", [])) if isinstance(tool_result, dict) else []
+            tool_messages: list[Any] = emitted_messages
+            total_output_chars = sum(len(str(getattr(message, "content", ""))) for message in emitted_messages)
+            for tc_name in tool_names:
+                log_event("agent.tool.completed", run_id=str(state.get("run_id", "")), tool=tc_name, output_chars=total_output_chars)
+                yield {"type": "tool_start", "tool": tc_name}
+                yield {"type": "tool_end", "tool": tc_name, "output_chars": total_output_chars}
+        except Exception as exc:
+            log_exception("agent.tool.error", exc, run_id=str(state.get("run_id", "")), tools=tool_names)
+            yield {"type": "error", "failure_class": "tool_execution_failed", "error": str(exc)[:500]}
+            return
 
-        # Append and loop
+        # Append the assistant response and actual ToolMessages, then loop.
         state = dict(state)
         state["messages"] = state.get("messages", []) + [response] + tool_messages
         state["loop_count"] = loop_count

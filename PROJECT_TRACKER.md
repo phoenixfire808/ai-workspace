@@ -4,16 +4,16 @@
 
 ## 1. Current status
 
-- **Phase:** Phase 44 — Project renamed from M⊕ AI Visual Workspace → Refactor Workflow Studio; Docker stack cut over to `rws-*` containers on smoke ports; exact LFM model lock preserved.
-- **Status:** Refactor Workflow Studio live at http://127.0.0.1:8100 (Docker smoke) and http://127.0.0.1:8000 (native baseline); rename propagated across FastAPI title, frontend `<title>`, brand banner, ChatPanel, ControlCenterPanel, `package.json`, planner note, model profile labels, runtime control label, upgrade inventory label, options registry header, runbook, README, and ROADMAP.md. Historical entries below preserve the original M⊕ references as written at the time.
+- **Phase:** Phase 46 — MCP agent bridge + expanded runnable workflow/template library.
+- **Status:** Refactor Workflow Studio is live on Docker smoke ports: frontend `:3100`, backend `:8100`, standalone SearXNG `:8888`, and Ollama `:11435`. The exact LFM model is loaded in VRAM; MCP discovery, resources, read-only tools, approval-gated sandbox execution, and approval-gated workflow-file create/edit/delete are verified end-to-end. Historical entries below preserve earlier state and original M⊕ references as written at the time.
 - **Workspace:** `C:\Users\Drew\Documents\Jarvis_Context\Projects\ai-workspace`
-- **Last verified:** 2026-08-07 13:51 CDT
-- **Current parent todo:** Phase 27 complete; real model generation smoke, frontend build, and tracker finalization are next
+- **Last verified:** 2026-08-09 14:20 CDT
+- **Current parent todo:** Phase 46 source/tests/tracker are complete locally; commit/push and PR update are next
 - **Testing policy:** Focused checks + one consolidated verification pass at end of each session
 
 ### Immediate next action
 
-Keep the existing publisher-fork Nanbeige runtime on the RTX 2070 SUPER as the verified default while defining the runtime-profile contract with Drew. Profiles must support RTX 5060 Ti only, RTX 2070 SUPER only, and explicitly approved dual-GPU modes without exposing arbitrary runtime arguments. Preserve the current LFM integration, and do not repoint a live listener until its replacement profile passes preflight and rollback checks.
+Keep the exact LFM model preloaded while Drew exercises the 24 templates and MCP client path. Preserve the approval-gated two-step contract for sandbox/code execution and workspace writes; do not expose arbitrary shell, secrets, or alternate models. After Drew approves the local commit/push receipt, reconcile any sibling changes before integration.
 
 ## 1.1 Proposed LFM2.5-2.6B agent-engine upgrade
 
@@ -1532,3 +1532,23 @@ Drew wants a canvas node that can take one larger request, decompose it into use
 - Exact model is present in Ollama: `hf.co/mradermacher/LFM2.5-2.6B-UNCENSORED-ABLITERATED-PHILADELPHIA-CLASS-GGUF:Q4_K_M`.
 - Backend `/api/health` returned HTTP 200 with `model_ready=true` and `model_policy=exact_only`; frontend HTTP 200; SearXNG JSON search HTTP 200 with 10 results; browser shows backend connected and the exact global/coder model.
 - Container GPU visibility remains verified for RTX 5060 Ti and RTX 2070 SUPER. Smoke URLs are live on loopback ports `3100`, `8100`, `11435`, and `8889`.
+
+**Phase 46 — MCP bridge, template expansion, and live acceptance (2026-08-09 14:20 CDT):**
+- Added `backend/mcp_bridge.py` with a JSON-RPC MCP subset at `POST /mcp`: `initialize`, `ping`, `tools/list`, `tools/call`, `resources/list`, `resources/read`, `prompts/list`, and `prompts/get`.
+- Exposed 14 bounded tools, including local SearXNG search/extraction/research, workspace inspection, `execute_python_sandbox`, and workspace file operations. Read-only tools execute directly through LangChain `invoke()`.
+- Approval-required tools use a two-step MCP extension: first call returns a preview ID, normalized arguments, and diff/impact; the second call must repeat with `_preview_id` and `_approved=true`. This preserves existing workspace-write, sandbox, managed-runtime, and external-action gates.
+- Added MCP resources for templates, library catalog, and health. Fixed the initial resource-read crash caused by a lowercase Python `false`, corrected the library reader to use `query_library`, and corrected MCP template arguments to the actual `relative_path` schema.
+- Expanded the template catalog to 24 templates with scoped concrete defaults for web search, page extraction, bounded Python checks, research, code verification, workspace inspection, and MCP workflow preparation.
+- Added `backend/tests/test_mcp_bridge.py`; final backend suite passed `22/22`, frontend `npm run typecheck` passed, Docker backend rebuilt/restarted healthy, SearXNG remained healthy, and exact LFM preload passed with `2,419,494,747` VRAM bytes and `30m` keep-alive.
+- Live MCP receipt: 14 tools, 3 resources, 24 templates, 45 library entries; approved sandbox returned `5`; guarded create → read → patch → read → delete workflow-file cycle passed and temporary artifact was removed through MCP.
+- Recovery note: the first smoke harness failed only because its assertion assumed every tool returned JSON; `read_workspace_file` correctly returns plain text. The test harness was corrected and the full acceptance batch rerun successfully.
+- Current source and tracker changes are local and ready for the approved commit/push reconciliation.
+
+**Phase 47 — Model/tool recovery, structured logging, and ACLI load test (2026-08-09):**
+- Reproduced the recurring chat failure as FastAPI HTTP 422: `payload` was incorrectly treated as a query parameter because `ChatStreamPayload` was missing from `backend/main.py` imports. Restored the schema import; `/api/chat/sync` now accepts JSON and returns HTTP 200.
+- Verified the exact LFM model directly through Ollama (`READY`) and through workspace chat (`READY`); no provider fallback was used.
+- Fixed the production HITL loop to bind all allowlisted tools, preserve structured tool calls, invoke `ToolNode` once per assistant turn, and append real `ToolMessage` objects for the next model turn. Approved `search_web` now executes; unapproved follow-on `deep_research` correctly pauses for approval.
+- Added redacted structured JSON logging in `backend/observability.py` and verified Docker receipts for model selection, preflight, invocation, response, chat completion, and MCP/tool lifecycle events. Prompts, scripts, file contents, and arbitrary arguments are excluded.
+- Added `scripts/rws_workflow_cli.py` (ACLI): external coding agents can list 24 workflow ideas, inspect files, use local SearXNG, create/patch/delete workflow files, and run bounded Python through MCP. Writes/code execution require `--approve` and preserve preview/preimage gates.
+- ACLI verification passed: 24 ideas listed, exact model health reported at `2,419,494,747` VRAM bytes, and approved sandbox returned `5`.
+- Latest Docker backend is loaded and the Refactor Workflow Studio preview was refreshed at `http://127.0.0.1:3100/`.

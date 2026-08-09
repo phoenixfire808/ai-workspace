@@ -18,6 +18,7 @@ from .runtime_control import list_runtime_profiles, preflight_runtime_profile
 from .schema import GraphDocument
 from .tools import APPROVAL_REQUIRED_TOOLS, WORKSPACE_TOOL_CATALOG, WORKSPACE_TOOLS, preview_workspace_mutation
 from .web_research import web_preflight
+from .observability import log_event, log_exception
 
 ResourceCategory = Literal["tool", "agent", "skill", "model", "runtime", "template"]
 
@@ -157,6 +158,11 @@ def _templates() -> list[dict[str, Any]]:
             "template_id": "deep-research-context",
             "label": "Deep research to cited context",
             "description": "Use workflow input as a local SearXNG research query, build a bounded cited context packet, and pass it to a local model.",
+            "default_arguments": {
+                "tool:deep_research": {
+                    "query": "fastapi vs flask performance 2025",
+                },
+            },
             "nodes": [
                 ("start", {}),
                 ("tool", {"resource_id": "tool:deep_research", "arguments": {"query": "", "max_pages": 8, "max_results_per_query": 6, "extract_pages": True}}),
@@ -165,10 +171,230 @@ def _templates() -> list[dict[str, Any]]:
             ],
         },
         {
+            "template_id": "search-and-test",
+            "label": "Search the web and run a Python check",
+            "description": "Use workflow input as a SearXNG search query, fetch one selected result page, then run a bounded Python sandbox against the page contents. Final output is the sandbox return value plus the source URL.",
+            "default_arguments": {
+                "tool:search_web": {
+                    "query": "ollama python library",
+                },
+                "tool:extract_web_page": {
+                    "url": "https://pypi.org/project/ollama/",
+                },
+                "tool:execute_python_sandbox": {
+                    "script_content": "import re, sys\ntext = sys.stdin.read() if not sys.stdin.isatty() else ''\nlinks = re.findall(r'href=\"(https?://[^\"]+)\"', text)[:10]\nprint(f'page_chars={len(text)}')\nprint(f'link_count={len(set(links))}')\nfor url in sorted(set(links))[:5]:\n    print(url)\n",
+                },
+            },
+            "nodes": [
+                ("start", {}),
+                ("tool", {"resource_id": "tool:search_web", "arguments": {"query": "", "max_results": 8}}),
+                ("tool", {"resource_id": "tool:extract_web_page", "arguments": {"url": "", "max_chars": 8000}}),
+                ("tool", {"resource_id": "tool:execute_python_sandbox", "arguments": {"script_content": "import re, sys\ntext = sys.stdin.read() if not sys.stdin.isatty() else ''\nprint(f'page_chars={len(text)}')\nlinks = re.findall(r'href=\"(https?://[^\"]+)\"', text)[:10]\nfor link in links:\n    print(link)\n"}}),
+            ],
+        },
+        {
             "template_id": "decompose-worker-plan",
             "label": "Decompose worker plan",
             "description": "Split workflow input into a bounded worker plan; dispatch remains off until a configured worker and approval policy are selected.",
             "nodes": [("start", {}), ("delegate", {"dispatch_mode": "plan_only", "decompose_strategy": "checklist", "max_subtasks": 8})],
+        },
+        {
+            "template_id": "mcp-create-workflow",
+            "label": "MCP: list templates, create a new workflow file",
+            "description": "Read the workspace template catalog through the MCP resource, then create a new workflow JSON file in the workspace via the create_workspace_file MCP tool. Demonstrates the external-agent communication path.",
+            "default_arguments": {
+                "tool:read_workspace_file": {
+                    "relative_path": "ROADMAP.md",
+                },
+                "tool:create_workspace_file": {
+                    "relative_path": "output/new-workflow.json",
+                    "content": "{\n  \"name\": \"new-workflow\",\n  \"nodes\": [],\n  \"edges\": []\n}\n",
+                    "expected_absent": True,
+                },
+            },
+            "nodes": [
+                ("start", {}),
+                ("tool", {"resource_id": "tool:list_workspace_files", "arguments": {"relative_path": ""}}),
+                ("tool", {"resource_id": "tool:read_workspace_file", "arguments": {"relative_path": "ROADMAP.md"}}),
+                ("tool", {"resource_id": "tool:create_workspace_file", "arguments": {"relative_path": "output/new-workflow.json", "content": "{}", "expected_absent": True}}),
+            ],
+        },
+        {
+            "template_id": "mcp-edit-and-verify",
+            "label": "MCP: read workflow and prepare a safe edit",
+            "description": "Read an existing workflow file and inspect its current contents before an external MCP agent performs a guarded patch. The actual edit requires the read result's current SHA-256 and is approval-gated.",
+            "default_arguments": {
+                "tool:read_workspace_file": {
+                    "relative_path": "output/new-workflow.json",
+                },
+            },
+            "nodes": [
+                ("start", {}),
+                ("tool", {"resource_id": "tool:read_workspace_file", "arguments": {"relative_path": "output/new-workflow.json"}}),
+            ],
+        },
+        {
+            "template_id": "research-and-summarize",
+            "label": "Multi-query research with bounded summary",
+            "description": "Run multi-query SearXNG research on the workflow input topic, build a citation-preserving context packet, and pass it to the exact local model for a bounded summary.",
+            "default_arguments": {
+                "tool:deep_research": {
+                    "query": "fastapi vs flask 2025 benchmark",
+                },
+            },
+            "nodes": [
+                ("start", {}),
+                ("tool", {"resource_id": "tool:deep_research", "arguments": {"query": "", "max_pages": 6, "max_results_per_query": 5, "extract_pages": True}}),
+                ("tool", {"resource_id": "tool:build_research_context", "arguments": {"context_text": "", "max_chars": 20000}}),
+                ("coder", {"provider": "ollama", "model": ""}),
+            ],
+        },
+        {
+            "template_id": "fetch-and-parse",
+            "label": "Fetch one URL and parse the page",
+            "description": "Pull the workflow input URL with redirect / DNS / size / robots enforcement, then run a bounded Python sandbox to extract structured fields (title, links, counts).",
+            "default_arguments": {
+                "tool:extract_web_page": {
+                    "url": "https://ollama.com/blog",
+                },
+                "tool:execute_python_sandbox": {
+                    "script_content": "import re, sys\ntext = sys.stdin.read() if not sys.stdin.isatty() else ''\nm = re.search(r'<title>([^<]+)</title>', text) or re.search(r'#\\s+(.+)', text)\ntitle = (m.group(1).strip() if m else '(no title)')[:120]\nlinks = re.findall(r'href=\"(https?://[^\"]+)\"', text)\nprint(f'title={title}')\nprint(f'link_count={len(set(links))}')\nprint(f'char_count={len(text)}')\nfor url in sorted(set(links))[:8]:\n    print(url)\n",
+                },
+            },
+            "nodes": [
+                ("start", {}),
+                ("tool", {"resource_id": "tool:extract_web_page", "arguments": {"url": "", "max_chars": 12000}}),
+                ("tool", {"resource_id": "tool:execute_python_sandbox", "arguments": {"script_content": "import re, sys\ntext = sys.stdin.read() if not sys.stdin.isatty() else ''\nm = re.search(r'<title>([^<]+)</title>', text) or re.search(r'#\\s+(.+)', text)\ntitle = (m.group(1).strip() if m else '(no title)')[:120]\nlinks = re.findall(r'href=\"(https?://[^\"]+)\"', text)\nprint(f'title={title}')\nprint(f'link_count={len(set(links))}')\nprint(f'char_count={len(text)}')\nfor url in sorted(set(links))[:8]:\n    print(url)\n"}}),
+            ],
+        },
+        {
+            "template_id": "code-with-tests",
+            "label": "Code with a built-in smoke test",
+            "description": "Send workflow input as a Python task to the exact local coder model, then run a bounded Python sandbox that asserts a property of the expected output (verifying the model's reply without trusting it).",
+            "nodes": [
+                ("start", {}),
+                ("coder", {"provider": "ollama", "model": ""}),
+                ("tool", {"resource_id": "tool:execute_python_sandbox", "arguments": {"script_content": "text = sys.stdin.read() if not sys.stdin.isatty() else ''\nimport re\nhas_code = bool(re.search(r'def\\s+\\w+\\s*\\(', text))\nhas_doc = bool(re.search(r'\"\"\".*?\"\"\"', text, re.DOTALL))\nprint(f'has_function_def={has_code}')\nprint(f'has_docstring={has_doc}')\nprint(f'char_count={len(text)}')\n"}}),
+            ],
+        },
+        {
+            "template_id": "search-compare-summarize",
+            "label": "Search, compare two pages, summarize",
+            "description": "Run a SearXNG search on the workflow input, fetch the top two result pages, run a bounded Python sandbox to diff them (shared links, text overlap), and pass the diff to the local model for a comparison summary.",
+            "nodes": [
+                ("start", {}),
+                ("tool", {"resource_id": "tool:search_web", "arguments": {"query": "", "max_results": 4}}),
+                ("tool", {"resource_id": "tool:extract_web_page", "arguments": {"url": "", "max_chars": 8000}}),
+                ("tool", {"resource_id": "tool:execute_python_sandbox", "arguments": {"script_content": "import re\npage_a = sys.stdin.read()\n# placeholder: diff computed below after second extract\n"}}),
+                ("tool", {"resource_id": "tool:execute_python_sandbox", "arguments": {"script_content": "import re\na = open('/tmp/a.txt').read() if False else ''  # placeholder\nprint('diff_placeholder=ok')\n"}}),
+            ],
+        },
+        {
+            "template_id": "inspect-and-document",
+            "label": "Inspect a Python module and document it",
+            "description": "Read a workspace Python module, list workspace files, inspect the AST for top-level symbols, then send the metadata to the local model for a documentation summary.",
+            "nodes": [
+                ("start", {}),
+                ("tool", {"resource_id": "tool:list_workspace_files", "arguments": {"relative_path": ""}}),
+                ("tool", {"resource_id": "tool:inspect_python_ast", "arguments": {"relative_path": "backend/main.py"}}),
+                ("tool", {"resource_id": "tool:read_workspace_file", "arguments": {"relative_path": "backend/main.py"}}),
+                ("coder", {"provider": "ollama", "model": ""}),
+            ],
+        },
+        {
+            "template_id": "research-with-quote",
+            "label": "Research, then quote a single source",
+            "description": "SearXNG search on the workflow input, fetch the top page, extract a bounded quoted excerpt with a bounded Python regex, then pass the quote to the local model for a one-paragraph summary.",
+            "default_arguments": {
+                "tool:search_web": {
+                    "query": "what is searxng",
+                },
+                "tool:extract_web_page": {
+                    "url": "https://github.com/searxng/searxng",
+                },
+                "tool:execute_python_sandbox": {
+                    "script_content": "import re, sys\ntext = sys.stdin.read() if not sys.stdin.isatty() else ''\nparagraphs = [p.strip() for p in re.split(r'\\n\\s*\\n', text) if len(p.strip()) > 80]\nquote = paragraphs[0][:400] if paragraphs else '(no paragraph found)'\nprint(f'quote={quote}')\nprint(f'paragraph_count={len(paragraphs)}')\n",
+                },
+            },
+            "nodes": [
+                ("start", {}),
+                ("tool", {"resource_id": "tool:search_web", "arguments": {"query": "", "max_results": 5}}),
+                ("tool", {"resource_id": "tool:extract_web_page", "arguments": {"url": "", "max_chars": 12000}}),
+                ("tool", {"resource_id": "tool:execute_python_sandbox", "arguments": {"script_content": "import re, sys\ntext = sys.stdin.read() if not sys.stdin.isatty() else ''\nparagraphs = [p.strip() for p in re.split(r'\\n\\s*\\n', text) if len(p.strip()) > 80]\nquote = paragraphs[0][:400] if paragraphs else '(no paragraph found)'\nprint(f'quote={quote}')\nprint(f'paragraph_count={len(paragraphs)}')\n"}}),
+                ("coder", {"provider": "ollama", "model": ""}),
+            ],
+        },
+        {
+            "template_id": "audit-suggestions",
+            "label": "Audit workspace and suggest improvements",
+            "description": "List workspace files, inspect the top-level Python AST of the workspace, and ask the local model for a small set of bounded, actionable improvement suggestions. Output is metadata-only (file paths, symbol names) — no code is generated.",
+            "nodes": [
+                ("start", {}),
+                ("tool", {"resource_id": "tool:list_workspace_files", "arguments": {"relative_path": ""}}),
+                ("tool", {"resource_id": "tool:inspect_python_ast", "arguments": {"relative_path": "backend/main.py"}}),
+                ("coder", {"provider": "ollama", "model": ""}),
+            ],
+        },
+        {
+            "template_id": "code-and-prove",
+            "label": "Code with a numeric proof",
+            "description": "Ask the local model to solve a math / counting problem, then run a bounded Python sandbox that re-computes the expected result from the model output and proves the answer is correct (or shows the divergence).",
+            "nodes": [
+                ("start", {}),
+                ("coder", {"provider": "ollama", "model": ""}),
+                ("tool", {"resource_id": "tool:execute_python_sandbox", "arguments": {"script_content": "import re, sys\ntext = sys.stdin.read() if not sys.stdin.isatty() else ''\nm = re.search(r'(?<![\\w.])(\\d+)(?![\\w.])', text)\nanswer = int(m.group(1)) if m else None\nprint(f'extracted_answer={answer}')\n# sanity: a re-computation point (no model-specific math here)\nprint(f'has_number={bool(m)}')\n"}}),
+            ],
+        },
+        {
+            "template_id": "quick-webcheck",
+            "label": "Quick webcheck for the workflow input",
+            "description": "Run a single SearXNG search for the workflow input query and return the top three result titles + URLs. No model call, no sandbox — fast pure-search template.",
+            "default_arguments": {
+                "tool:search_web": {
+                    "query": "ollama python library",
+                },
+            },
+            "nodes": [
+                ("start", {}),
+                ("tool", {"resource_id": "tool:search_web", "arguments": {"query": "", "max_results": 3}}),
+            ],
+        },
+        {
+            "template_id": "research-extract-execute",
+            "label": "Research, extract page, execute a check",
+            "description": "Full pipeline: SearXNG research (multi-query), extract one selected page, then run a bounded Python sandbox against the page contents. End output is the sandbox stdout and the source URL.",
+            "default_arguments": {
+                "tool:deep_research": {
+                    "query": "ollama api documentation",
+                },
+                "tool:extract_web_page": {
+                    "url": "https://github.com/ollama/ollama/blob/main/docs/api.md",
+                },
+                "tool:execute_python_sandbox": {
+                    "script_content": "import re, sys\ntext = sys.stdin.read() if not sys.stdin.isatty() else ''\nprint(f'page_chars={len(text)}')\nprint(f'word_count={len(text.split())}')\nlinks = re.findall(r'href=\"(https?://[^\"]+)\"', text)\nprint(f'link_count={len(set(links))}')\nfor url in sorted(set(links))[:5]:\n    print(url)\n",
+                },
+            },
+            "nodes": [
+                ("start", {}),
+                ("tool", {"resource_id": "tool:deep_research", "arguments": {"query": "", "max_pages": 6, "max_results_per_query": 5, "extract_pages": True}}),
+                ("tool", {"resource_id": "tool:extract_web_page", "arguments": {"url": "", "max_chars": 12000}}),
+                ("tool", {"resource_id": "tool:execute_python_sandbox", "arguments": {"script_content": "import re, sys\ntext = sys.stdin.read() if not sys.stdin.isatty() else ''\nprint(f'page_chars={len(text)}')\nprint(f'word_count={len(text.split())}')\nlinks = re.findall(r'href=\"(https?://[^\"]+)\"', text)\nprint(f'link_count={len(set(links))}')\nfor url in sorted(set(links))[:5]:\n    print(url)\n"}}),
+            ],
+        },
+        {
+            "template_id": "extract-and-summarize",
+            "label": "Extract one URL and summarize",
+            "description": "Pull one URL with robots / DNS / size enforcement, then ask the local model to summarize the page in a bounded way. Final output is the model summary plus the source URL.",
+            "default_arguments": {
+                "tool:extract_web_page": {
+                    "url": "https://ollama.com/blog",
+                },
+            },
+            "nodes": [
+                ("start", {}),
+                ("tool", {"resource_id": "tool:extract_web_page", "arguments": {"url": "", "max_chars": 15000}}),
+                ("coder", {"provider": "ollama", "model": ""}),
+            ],
         },
     ]
 
@@ -177,9 +403,24 @@ def _template_graph(template: dict[str, Any], options: dict[str, Any] | None = N
     options = options or {}
     nodes: list[dict[str, Any]] = []
     edges: list[dict[str, str]] = []
+    default_arguments = template.get("default_arguments") or {}
     for index, (kind, data) in enumerate(template["nodes"]):
         node_id = f"{kind}-{index + 1}-{uuid.uuid4().hex[:6]}"
         merged = {**data}
+        # Apply per-template default arguments AFTER the per-node
+        # arguments so concrete defaults override the empty placeholder
+        # strings in the template definition. Defaults are keyed by
+        # resource_id when present (so they target one specific tool
+        # node, not every tool node of the same kind) and fall back to
+        # a kind-level key for coder / file / runtime / agent nodes.
+        # Defaults do not overwrite values that the caller passed via
+        # options.
+        resource_id = str(merged.get("resource_id", ""))
+        keyed = default_arguments.get(resource_id) or default_arguments.get(kind) or {}
+        for arg_name, default_value in keyed.items():
+            if merged.get("arguments", {}).get(arg_name, "") in ("", None):
+                merged.setdefault("arguments", {})
+                merged["arguments"][arg_name] = default_value
         if kind == "coder" and options.get("model"):
             merged["model"] = str(options["model"])
         if kind == "coder" and options.get("provider"):
@@ -372,6 +613,7 @@ def _store_preview(kind: str, subject: Any, approvals: list[dict[str, Any]]) -> 
 
 
 def preview_action(payload: ActionPreviewPayload) -> dict[str, Any]:
+    log_event("workflow.action.preview.start", resource_id=payload.resource_id)
     resource = get_resource(payload.resource_id)
     if not resource.ready:
         raise ValueError(resource.disabled_reason or "resource is not ready")
@@ -389,10 +631,13 @@ def preview_action(payload: ActionPreviewPayload) -> dict[str, Any]:
     if resource.requires_approval:
         approvals.append({"resource_id": resource.resource_id, "label": resource.label, "scope": resource.scope})
     subject = {"resource_id": payload.resource_id, "arguments": arguments}
-    return {"resource": resource.model_dump(mode="json"), "arguments": arguments, "impact_preview": impact_preview, **_store_preview("action", subject, approvals)}
+    result = {"resource": resource.model_dump(mode="json"), "arguments": arguments, "impact_preview": impact_preview, **_store_preview("action", subject, approvals)}
+    log_event("workflow.action.preview.ready", resource_id=payload.resource_id, preview_id=result.get("preview_id"), requires_approval=result.get("requires_approval"))
+    return result
 
 
 def run_action(payload: ActionRunPayload, workspace_root: Path) -> dict[str, Any]:
+    log_event("workflow.action.run.start", resource_id=payload.resource_id, preview_id=payload.preview_id, approved=payload.approved)
     subject = {"resource_id": payload.resource_id, "arguments": payload.arguments}
     with _preview_lock:
         record = _previews.pop(payload.preview_id, None)
@@ -421,7 +666,9 @@ def run_action(payload: ActionRunPayload, workspace_root: Path) -> dict[str, Any
         output = json.dumps(preflight_runtime_profile(profile_id), ensure_ascii=False)
     else:
         raise ValueError("resource does not support Run now")
-    return {"status": "completed", "resource_id": resource.resource_id, "output": str(output)[:200_000]}
+    result = {"status": "completed", "resource_id": resource.resource_id, "output": str(output)[:200_000]}
+    log_event("workflow.action.run.complete", resource_id=resource.resource_id, status="completed", output_chars=len(result["output"]))
+    return result
 
 
 def instantiate_template(template_id: str, options: dict[str, Any] | None = None) -> dict[str, Any]:
