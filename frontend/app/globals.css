@@ -333,3 +333,9 @@ button { color: inherit; }
   .canvas-wrap { order: 2; min-height: 600px; }
   .right-panel { order: 3; }
 }
+
+/* VRAM live-load panel — on-demand preload / unload */
+.ollama-vram-panel { display: flex; flex-direction: column; gap: 10px; }
+.vram-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+.vram-actions .button { flex: 1 1 130px; }
+.vram-message { display: block; margin-top: 4px; color: var(--muted-bright); font-size: 9px; word-break: break-all; }

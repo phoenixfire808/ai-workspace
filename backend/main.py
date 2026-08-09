@@ -46,7 +46,16 @@ from .runtime_control import list_runtime_profiles, preflight_runtime_profile
 from .plugins import plugin_catalog
 from .terminal_control import TerminalPreviewRequest, preview_terminal_command
 from .upgrade_control import upgrade_inventory, upgrade_preflight
-from .ollama_control import DEFAULT_OLLAMA_BASE_URL, DEFAULT_OLLAMA_MODEL, OllamaPreflightPayload, list_ollama_models, preflight_ollama_model
+from .ollama_control import (
+    DEFAULT_OLLAMA_BASE_URL,
+    DEFAULT_OLLAMA_MODEL,
+    OllamaPreflightPayload,
+    list_ollama_models,
+    list_ollama_running_models,
+    preflight_ollama_model,
+    preload_ollama_model,
+    unload_ollama_model,
+)
 from .model_settings import WorkspaceModelPayload, get_workspace_model_setting, save_workspace_model_setting
 from .model_profiles import (
     EndpointProfilePayload,
@@ -290,6 +299,45 @@ def ollama_models() -> dict[str, Any]:
 def ollama_preflight(payload: OllamaPreflightPayload) -> dict[str, Any]:
     """Require an exact installed Ollama model before a workflow can invoke it."""
     return preflight_ollama_model(payload.model)
+
+
+@app.get("/api/ollama/ps")
+def ollama_ps() -> dict[str, Any]:
+    """Return models currently loaded in VRAM (read-only Ollama /api/ps).
+
+    Used by the UI to surface a live "what's loaded" panel and to power
+    one-click Preload / Unload buttons. The endpoint never mutates Ollama
+    state; it only reports. Approximate live keep_alive fields are
+    forwarded unchanged so the UI can show when each model will evict.
+    """
+    return list_ollama_running_models()
+
+
+@app.post("/api/ollama/preload")
+def ollama_preload(model: str, keep_alive: str = "5m") -> dict[str, Any]:
+    """Load an exact Ollama model into VRAM without invoking a chat run.
+
+    Symmetric counterpart to /api/ollama/unload. Both are read in the UI
+    as one-click actions; neither goes through the chat-tool approval
+    modal because the symmetric pair (load / unload) is the user's
+    explicit on-demand request. The exact-model policy still applies:
+    only the approved exact tag is accepted.
+
+    The model name is taken from a query parameter rather than the URL
+    path because Ollama tags contain colons (e.g. `hf.co/...:Q4_K_M`)
+    that conflict with FastAPI's segment-level path matching.
+    """
+    return preload_ollama_model(model, keep_alive=keep_alive)
+
+
+@app.post("/api/ollama/unload")
+def ollama_unload(model: str) -> dict[str, Any]:
+    """Unload an exact Ollama model from VRAM immediately (keep_alive=0).
+
+    Symmetric counterpart to /api/ollama/preload. Model is supplied via
+    query parameter for the same colon-in-tag reason.
+    """
+    return unload_ollama_model(model)
 
 
 @app.get("/api/settings/model")

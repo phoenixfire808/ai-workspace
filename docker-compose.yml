@@ -60,11 +60,12 @@ services:
       WORKSPACE_MODEL_PROVIDER: ollama
       WORKSPACE_MODEL_TIMEOUT_SECONDS: "180"
       WORKSPACE_DOCKER_MODE: "0"
-      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_BASE_URL: http://host.docker.internal:11435
       OLLAMA_MODEL: "hf.co/mradermacher/LFM2.5-2.6B-UNCENSORED-ABLITERATED-PHILADELPHIA-CLASS-GGUF:Q4_K_M"
-      # SearXNG runs as its own standalone container on the host loopback
-      # (searxng-hermes). It is NOT part of this compose stack. We reach it
-      # via host.docker.internal so the backend container can talk to it.
+      # Ollama and SearXNG both run as their own standalone containers
+      # on the host loopback. They are NOT part of this compose stack.
+      # We reach them via host.docker.internal from inside the backend
+      # container (extra_hosts mapping below).
       SEARXNG_URL: http://host.docker.internal:8888
       SEARXNG_PREFLIGHT_TIMEOUT_SECONDS: "5"
     volumes:

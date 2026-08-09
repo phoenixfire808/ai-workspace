@@ -29,6 +29,24 @@ class DockerRoutingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             safe_ollama_base_url("http://example.invalid:11434")
 
+    def test_host_docker_internal_accepted_for_standalone_ollama(self) -> None:
+        # host.docker.internal is allowed even when WORKSPACE_DOCKER_MODE=0
+        # because Ollama (rws-ollama on :11435) runs as its own container on
+        # the host loopback and the backend container reaches it via this
+        # hostname. No explicit docker_mode required.
+        os.environ["WORKSPACE_DOCKER_MODE"] = "0"
+        self.assertEqual(
+            safe_ollama_base_url("http://host.docker.internal:11435"),
+            "http://host.docker.internal:11435",
+        )
+
+        # And the bare loopback remains the default.
+        self.assertEqual(safe_ollama_base_url("http://127.0.0.1:11434"), "http://127.0.0.1:11434")
+
+        # And other public hostnames still fail closed.
+        with self.assertRaises(ValueError):
+            safe_ollama_base_url("http://example.invalid:11434")
+
     def test_docker_allows_only_internal_searxng_service(self) -> None:
         os.environ["WORKSPACE_DOCKER_MODE"] = "true"
         os.environ["SEARXNG_URL"] = "http://searxng:8080"

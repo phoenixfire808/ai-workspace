@@ -51,6 +51,33 @@ type OllamaInventory = {
   models: Array<{ name: string; size?: number | null; openai_advertised?: boolean }>;
 };
 
+type OllamaRunningModel = {
+  name: string;
+  model?: string;
+  size_vram?: number | null;
+  size?: number | null;
+  digest?: string;
+  expires_at?: string;
+};
+
+type OllamaPs = {
+  status: string;
+  failure_class?: string | null;
+  base_url?: string;
+  models: OllamaRunningModel[];
+  default_model?: string;
+  approved_model?: string;
+  model_policy?: string;
+};
+
+type OllamaLoadAction = {
+  status: string;
+  failure_class?: string | null;
+  model?: string;
+  mutation?: string;
+  keep_alive?: string;
+};
+
 type WorkspaceModelSetting = {
   provider: "ollama";
   model: string;
@@ -86,6 +113,10 @@ export default function ControlCenterPanel() {
   const [inventory, setInventory] = useState<UpgradeInventory | null>(null);
   const [upgradePreflight, setUpgradePreflight] = useState<UpgradePreflight | null>(null);
   const [ollamaInventory, setOllamaInventory] = useState<OllamaInventory | null>(null);
+  const [ollamaPs, setOllamaPs] = useState<OllamaPs | null>(null);
+  const [ollamaPsError, setOllamaPsError] = useState<string | null>(null);
+  const [vramBusy, setVramBusy] = useState<"preload" | "unload" | null>(null);
+  const [vramMessage, setVramMessage] = useState<string | null>(null);
   const [workspaceModel, setWorkspaceModel] = useState<WorkspaceModelSetting | null>(null);
   const [workspaceModelDraft, setWorkspaceModelDraft] = useState("");
   const [workspaceHardwareDraft, setWorkspaceHardwareDraft] = useState("auto");
@@ -160,6 +191,64 @@ export default function ControlCenterPanel() {
     setEndpointEnabled(endpoint.enabled);
     setEndpointPreflight(null);
   }, [endpoint]);
+
+  // Poll Ollama /api/ps so the VRAM panel reflects the live loaded-state
+  // after the user preloads or unloads a model. 5 s cadence is enough for
+  // human-driven UI; the backend route is O(<100 ms) and never mutates.
+  useEffect(() => {
+    let cancelled = false;
+    async function tick() {
+      try {
+        const result = await readJson<OllamaPs>(`${API_URL}/api/ollama/ps`);
+        if (!cancelled) {
+          setOllamaPs(result);
+          setOllamaPsError(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setOllamaPs(null);
+          setOllamaPsError(error instanceof Error ? error.message : "Ollama /api/ps failed.");
+        }
+      }
+    }
+    void tick();
+    const id = window.setInterval(tick, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, []);
+
+  async function vramAction(mutation: "preload" | "unload") {
+    const approved = ollamaInventory?.approved_model ?? EXACT_WORKSPACE_MODEL;
+    setVramBusy(mutation);
+    setVramMessage(null);
+    try {
+      const params = new URLSearchParams({ model: approved });
+      if (mutation === "preload") params.set("keep_alive", "10m");
+      const path = mutation === "preload" ? "/api/ollama/preload" : "/api/ollama/unload";
+      const result = await readJson<OllamaLoadAction>(`${API_URL}${path}?${params.toString()}`, { method: "POST" });
+      const verb = mutation === "preload" ? "preloaded" : "unloaded";
+      setVramMessage(
+        result.status === verb
+          ? `${mutation === "preload" ? "Loaded" : "Unloaded"} ${result.model ?? approved}.`
+          : `${result.failure_class ?? result.status}: ${result.model ?? approved}`
+      );
+      // Force an immediate refresh of /api/ps so the panel updates without
+      // waiting for the next 5 s tick.
+      try {
+        const refreshed = await readJson<OllamaPs>(`${API_URL}/api/ollama/ps`);
+        setOllamaPs(refreshed);
+        setOllamaPsError(null);
+      } catch {
+        /* polling tick will recover */
+      }
+    } catch (error) {
+      setVramMessage(error instanceof Error ? error.message : "VRAM action failed.");
+    } finally {
+      setVramBusy(null);
+    }
+  }
 
   async function saveWorkspaceModel() {
     setBusy(true); setNotice("");
@@ -261,6 +350,39 @@ export default function ControlCenterPanel() {
             <span className={stateClass(ollamaInventory.models.some((model) => model.name === (ollamaInventory.approved_model ?? EXACT_WORKSPACE_MODEL)) ? "ready" : "not-ready")}>APPROVED ONLY</span>
           </div>
         </div>
+      )}
+
+      <div className="panel-divider" />
+      <div className="mini-section-title">VRAM · LIVE LOAD STATE</div>
+      <small>On-demand load / unload · exact-model only · polled every 5 s.</small>
+      {ollamaPsError ? (
+        <div className="profile-card">
+          <div className="profile-card-title"><strong>Ollama /api/ps unreachable</strong><span className={stateClass("warn")}>offline</span></div>
+          <small>{ollamaPsError}</small>
+        </div>
+      ) : ollamaPs ? (
+        <div className="ollama-vram-panel">
+          <div className="profile-card">
+            <div className="profile-card-title"><strong>{ollamaPs.models.length === 0 ? "no models loaded" : `${ollamaPs.models.length} model${ollamaPs.models.length === 1 ? "" : "s"} loaded`}</strong><span className={stateClass(ollamaPs.models.length > 0 ? "ready" : "muted")}>{ollamaPs.status}</span></div>
+            <small>policy: {ollamaPs.model_policy ?? "exact_only"} · target: {ollamaPs.approved_model ?? EXACT_WORKSPACE_MODEL}</small>
+            {ollamaPs.models.map((m) => {
+              const vramGb = m.size_vram ? (m.size_vram / 1024 / 1024 / 1024).toFixed(2) : "?";
+              return (
+                <div className="upgrade-row" key={m.name}>
+                  <span title={m.digest ?? m.name}>{m.name}</span>
+                  <small>{vramGb} GB VRAM</small>
+                </div>
+              );
+            })}
+          </div>
+          <div className="vram-actions">
+            <button className="button button-primary" type="button" disabled={Boolean(vramBusy)} onClick={() => void vramAction("preload")}>{vramBusy === "preload" ? "Loading…" : "Preload exact model"}</button>
+            <button className="button button-quiet" type="button" disabled={Boolean(vramBusy)} onClick={() => void vramAction("unload")}>{vramBusy === "unload" ? "Unloading…" : "Unload now"}</button>
+          </div>
+          {vramMessage && <small className="vram-message">{vramMessage}</small>}
+        </div>
+      ) : (
+        <div className="profile-card"><small>polling…</small></div>
       )}
 
       <div className="panel-divider" />
