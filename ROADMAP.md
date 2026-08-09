@@ -191,4 +191,4 @@ link the new plan file from §2 and update the affected phases.
 | 2026-08-08 | 43 | Docker loopback-only Compose stack + exact-model one-shot verifier | `594cb80` |
 | 2026-08-08 | 43 | Exact LFM lock enforced across backend, control center, coder UI | `ebed43b` |
 | 2026-08-08 | — | Tracker append-only entry for Docker migration | `bd69249` |
-| 2026-08-08 | — | Add maintained `ROADMAP.md` | `(next)` |
+| 2026-08-08 | — | Add maintained `ROADMAP.md` | `ac150b2` |

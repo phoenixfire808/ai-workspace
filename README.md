@@ -2,6 +2,8 @@
 
 A local-first visual workflow builder for connecting Start, Buzz transcription, coder-model, file I/O, task, and allowlisted agent-reaction nodes. The frontend is Next.js 15 + React Flow; the backend is FastAPI + LangGraph + SQLite.
 
+> **See also:** [`ROADMAP.md`](./ROADMAP.md) for all plans and current state, and [`PROJECT_TRACKER.md`](./PROJECT_TRACKER.md) for the append-only implementation receipt log.
+
 ## Runtime boundary
 
 - Windows 10/11 is the supported target.
