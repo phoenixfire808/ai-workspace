@@ -183,7 +183,8 @@ link the new plan file from §2 and update the affected phases.
 
 | Date | Phase | Change | SHA(s) |
 |---|---|---|---|
-| 2026-08-08 | 44 | **Rename to Refactor Workflow Studio.** Display, FastAPI title, brand banner, ChatPanel, ControlCenterPanel, planner note, `package.json`, all model-profile / runtime / upgrade labels, options registry header, runbook, README, ROADMAP, plan titles, tracker header. Compose project + container names + volume + network → `refactor` / `rws-*`. SearXNG `secret_key` rotated. GitHub repo name + PR #1 preserved. | `(next)` |
+| 2026-08-09 | 44 | **Deep research dossier** — `IMPROVEMENTS_RESEARCH.md` (Phase 44 deep research via local SearXNG + bounded crawler; 18 docs / 14 domains; top-5 themes with 23 concrete recommendations). | `d9a3319` |
+| 2026-08-08 | 44 | **Rename to Refactor Workflow Studio.** Display, FastAPI title, brand banner, ChatPanel, ControlCenterPanel, planner note, `package.json`, all model-profile / runtime / upgrade labels, options registry header, runbook, README, ROADMAP, plan titles, tracker header. Compose project + container names + volume + network → `refactor` / `rws-*`. SearXNG `secret_key` rotated. GitHub repo name + PR #1 preserved. | `5ef8335` |
 | 2026-08-08 | 50/60 | Add option registry / Run Inspector / endpoint profiles (durable runtime slice) | `a72a8ff`, `0088f54`, `5fee07c`, `0fd2797`, `691d862` |
 | 2026-08-08 | 27 | Retire Nanbeige from Refactor Workflow Studio, pin exact LFM as global default | `c69c3ff`, `05c71ee` |
 | 2026-08-07 | 26 | Resizable workspace panels shipped | `470fe60` |
