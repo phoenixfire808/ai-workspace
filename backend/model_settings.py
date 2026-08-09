@@ -27,13 +27,15 @@ def _public(row: WorkspaceModelSetting | None) -> dict[str, Any]:
             "mutation": "none",
         }
     return {
-        "provider": row.provider,
-        "model": row.model,
+        "provider": "ollama",
+        "model": row.model if row.model == DEFAULT_OLLAMA_MODEL else DEFAULT_OLLAMA_MODEL,
         "hardware_profile_id": row.hardware_profile_id,
         "fallback_policy": row.fallback_policy,
         "persisted": True,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
         "mutation": "none",
+        "model_policy": "exact_only",
+        "legacy_model_rejected": row.model != DEFAULT_OLLAMA_MODEL,
     }
 
 
@@ -88,6 +90,8 @@ def resolve_workspace_model(
         raise ValueError("workspace_model_provider_not_supported")
     if not model:
         raise ValueError("workspace_model_missing")
+    if model != DEFAULT_OLLAMA_MODEL:
+        raise ValueError("workspace_exact_model_required")
     source = "node" if node_model else "workflow" if workflow.get("model") else "global"
     return {"provider": provider, "model": model, "source": source, "fallback_policy": "explicit_only"}
 

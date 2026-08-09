@@ -627,9 +627,7 @@ export default function Canvas() {
           </div>
           <div className="panel-divider" />
           <div className="mini-section-title">MODEL ROUTE</div>
-          <div className="route-card"><span className="route-indicator ollama" /><div><strong>LFM2.5-2.6B Q4_K_M</strong><small>Saved global Ollama model</small></div><span className="route-state">PRIMARY</span></div>
-          <div className="route-card route-muted"><span className="route-indicator minimax" /><div><strong>MiniMax-M3</strong><small>Explicit endpoint</small></div><span className="route-state">OPT-IN</span></div>
-          <div className="route-card route-muted"><span className="route-indicator minimax" /><div><strong>OpenRouter</strong><small>Explicit cloud endpoint</small></div><span className="route-state">OPT-IN</span></div>
+          <div className="route-card"><span className="route-indicator ollama" /><div><strong>LFM2.5-2.6B Q4_K_M</strong><small>Exact local Ollama model for every LLM route</small></div><span className="route-state">LOCKED</span></div>
           <div className="panel-divider" />
           <div className="mini-section-title">HARDWARE LANES</div>
           <div className="hardware-row"><span className="hardware-chip gpu-blue">AUTO</span><span>Ollama placement</span><small>Inspect live GPU evidence</small></div>

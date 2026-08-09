@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { EXACT_WORKSPACE_MODEL } from "./nodes/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
@@ -45,6 +46,8 @@ type UpgradePreflight = {
 type OllamaInventory = {
   status: string;
   default_model?: string;
+  approved_model?: string;
+  allowed_models?: string[];
   models: Array<{ name: string; size?: number | null; openai_advertised?: boolean }>;
 };
 
@@ -128,7 +131,7 @@ export default function ControlCenterPanel() {
       setWorkspaceModelDraft(modelSetting.model);
       setWorkspaceHardwareDraft(modelSetting.hardware_profile_id);
       setEndpoints(endpointInventory.profiles);
-      setSelectedEndpoint(endpointInventory.profiles.find((item) => item.provider_kind === "openrouter")?.id ?? endpointInventory.profiles[0]?.id ?? "");
+      setSelectedEndpoint(endpointInventory.profiles.find((item) => item.provider_kind === "ollama")?.id ?? endpointInventory.profiles[0]?.id ?? "");
       setGpus(gpuInventory.devices);
       setGpuProcesses(gpuInventory.processes ?? []);
       setHardwareProfiles(hardwareInventory.profiles);
@@ -251,20 +254,18 @@ export default function ControlCenterPanel() {
 
       {selected?.provider === "ollama" && ollamaInventory && (
         <div className="ollama-inventory">
-          <div className="mini-section-title">OLLAMA INVENTORY · {ollamaInventory.status}</div>
-          <small>Priority exact local IDs · default: {ollamaInventory.default_model ?? "auto"}</small>
-          {ollamaInventory.models.map((model) => (
-            <div className="upgrade-row" key={model.name}>
-              <span title={model.name}>{model.name}</span>
-              <span className={stateClass(model.openai_advertised ? "ready" : "not-ready")}>{model.openai_advertised ? "OpenAI API" : "tags only"}</span>
-            </div>
-          ))}
+          <div className="mini-section-title">OLLAMA MODEL · {ollamaInventory.status}</div>
+          <small>Exact-model policy · approved: {ollamaInventory.approved_model ?? EXACT_WORKSPACE_MODEL}</small>
+          <div className="upgrade-row">
+            <span title={ollamaInventory.approved_model ?? EXACT_WORKSPACE_MODEL}>{ollamaInventory.approved_model ?? EXACT_WORKSPACE_MODEL}</span>
+            <span className={stateClass(ollamaInventory.models.some((model) => model.name === (ollamaInventory.approved_model ?? EXACT_WORKSPACE_MODEL)) ? "ready" : "not-ready")}>APPROVED ONLY</span>
+          </div>
         </div>
       )}
 
       <div className="panel-divider" />
-      <div className="mini-section-title">MODEL ENDPOINTS · EXPLICIT ONLY</div>
-      <select className="control-select" value={selectedEndpoint} onChange={(event) => setSelectedEndpoint(event.target.value)} aria-label="Model endpoint profile">{endpoints.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.enabled ? "enabled" : "disabled"}</option>)}</select>
+      <div className="mini-section-title">MODEL ENDPOINT · EXACT LOCAL ONLY</div>
+      <select className="control-select" value={selectedEndpoint} onChange={(event) => setSelectedEndpoint(event.target.value)} aria-label="Model endpoint profile">{endpoints.filter((item) => item.provider_kind === "ollama").map((item) => <option key={item.id} value={item.id}>{item.name} · {item.enabled ? "enabled" : "disabled"}</option>)}</select>
       {endpoint && <div className="profile-card">
         <div className="profile-card-title"><strong>{endpoint.provider_kind}</strong><span className={stateClass(endpoint.enabled ? "ready" : "disabled")}>{endpoint.enabled ? "enabled" : "disabled"}</span></div>
         <small>{endpoint.base_url}</small>

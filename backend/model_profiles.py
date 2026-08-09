@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from .database import HardwareProfile, ModelEndpointProfile, SessionLocal
-from .ollama_control import DEFAULT_OLLAMA_MODEL
+from .ollama_control import DEFAULT_OLLAMA_MODEL, safe_ollama_base_url
 
 ProviderKind = Literal["ollama", "ollama_cloud", "ollama_compatible", "openai_compatible", "openrouter"]
 HardwareMode = Literal["auto", "cpu", "single_gpu", "multi_gpu"]
@@ -118,10 +118,12 @@ def list_endpoint_profiles(include_readiness: bool = False) -> list[dict[str, An
     _seed_defaults()
     with SessionLocal() as db:
         items = list(db.scalars(select(ModelEndpointProfile).order_by(ModelEndpointProfile.name)).all())
-        return [_endpoint_dict(item, include_readiness=include_readiness) for item in items]
+        return [_endpoint_dict(item, include_readiness=include_readiness) for item in items if item.provider_kind == "ollama"]
 
 
 def save_endpoint_profile(payload: EndpointProfilePayload) -> dict[str, Any]:
+    if payload.provider_kind != "ollama":
+        raise ValueError("M⊕ is locked to the exact local Ollama endpoint")
     profile_id = payload.id or f"endpoint-{uuid.uuid4().hex[:12]}"
     base_url = _normalized_url(payload.base_url)
     if payload.provider_kind == "openrouter" and urlsplit(base_url).hostname not in {"openrouter.ai", "www.openrouter.ai"}:
@@ -138,10 +140,17 @@ def save_endpoint_profile(payload: EndpointProfilePayload) -> dict[str, Any]:
             raise ValueError("an exact OpenRouter model ID is required before enabling the profile")
         if payload.enabled and not payload.credential_alias:
             raise ValueError("an OpenRouter credential alias is required before enabling the profile")
+    settings = dict(payload.settings)
+    selected_model = str(settings.get("model") or DEFAULT_OLLAMA_MODEL).strip()
+    if selected_model != DEFAULT_OLLAMA_MODEL:
+        raise ValueError("only the exact approved local Ollama model is enabled")
+    settings["model"] = DEFAULT_OLLAMA_MODEL
+    settings["fallback_policy"] = "explicit_only"
     with SessionLocal() as db:
         item = db.get(ModelEndpointProfile, profile_id)
         values = payload.model_dump(exclude={"id"})
         values["base_url"] = base_url
+        values["settings"] = settings
         if item is None:
             item = ModelEndpointProfile(id=profile_id, **values)
             db.add(item)
@@ -172,8 +181,12 @@ def preflight_endpoint(profile_id: str) -> dict[str, Any]:
             raise KeyError(profile_id)
         profile = _endpoint_dict(item)
     provider = str(profile["provider_kind"])
-    selected_model = str((profile.get("settings") or {}).get("model") or "").strip()
+    selected_model = str((profile.get("settings") or {}).get("model") or DEFAULT_OLLAMA_MODEL).strip()
     baseline = {"profile_id": profile_id, "provider_kind": provider, "selected_model": selected_model, "fallback_policy": str((profile.get("settings") or {}).get("fallback_policy") or "explicit_only"), "credential_alias": str(profile.get("credential_alias") or ""), "credential_configured": bool(profile.get("credential_configured")), "models": [], "mutation": "none"}
+    if provider != "ollama":
+        return {**baseline, "ready": False, "reason": "exact_local_ollama_only", "exact_model_available": False}
+    if selected_model != DEFAULT_OLLAMA_MODEL:
+        return {**baseline, "ready": False, "reason": "exact_model_policy_rejected", "exact_model_available": False}
     if not profile["enabled"]:
         return {**baseline, "ready": False, "reason": "profile_disabled", "exact_model_available": False}
     if provider == "openrouter" and not selected_model:
@@ -182,17 +195,15 @@ def preflight_endpoint(profile_id: str) -> dict[str, Any]:
     if profile["credential_alias"] and not secret:
         return {**baseline, "ready": False, "reason": "credential_alias_not_configured", "exact_model_available": False}
     headers = {"Authorization": f"Bearer {secret}"} if secret else {}
-    path = "/api/tags" if provider in {"ollama", "ollama_cloud", "ollama_compatible"} else "/models"
+    path = "/api/tags"
+    base_url = safe_ollama_base_url() if profile_id == "local-ollama" else str(profile["base_url"])
     try:
         with httpx.Client(timeout=3.0, trust_env=False, follow_redirects=False) as client:
-            response = client.get(f"{profile['base_url']}{path}", headers=headers)
+            response = client.get(f"{base_url}{path}", headers=headers)
             response.raise_for_status()
             body = response.json()
-        if provider in {"ollama", "ollama_cloud", "ollama_compatible"}:
-            models = [str(item.get("name") or item.get("model")) for item in body.get("models", []) if isinstance(item, dict)]
-        else:
-            models = [str(item.get("id")) for item in body.get("data", []) if isinstance(item, dict) and item.get("id")]
-        exact_model_available = not selected_model or selected_model in models
+        models = [str(item.get("name") or item.get("model")) for item in body.get("models", []) if isinstance(item, dict)]
+        exact_model_available = selected_model in models
         return {**baseline, "ready": exact_model_available, "reason": "" if exact_model_available else "exact_model_not_advertised", "models": models, "exact_model_available": exact_model_available}
     except (httpx.HTTPError, ValueError, TypeError) as exc:
         return {**baseline, "ready": False, "reason": f"{type(exc).__name__}: endpoint_preflight_failed", "exact_model_available": False}
@@ -207,8 +218,11 @@ def generate_with_endpoint(profile_id: str, *, model: str, prompt: str, system_p
         profile = _endpoint_dict(item)
     if not profile["enabled"]:
         raise ValueError("endpoint profile is disabled")
-    if not model.strip():
-        raise ValueError("an exact model ID is required")
+    if profile["provider_kind"] != "ollama":
+        raise ValueError("only the exact local Ollama endpoint is enabled")
+    if model.strip() != DEFAULT_OLLAMA_MODEL:
+        raise ValueError("only the exact approved local Ollama model is enabled")
+    base_url = safe_ollama_base_url() if profile_id == "local-ollama" else str(profile["base_url"])
     secret = _credential(str(profile["credential_alias"]))
     if profile["credential_alias"] and not secret:
         raise ValueError("endpoint credential alias is not configured")
@@ -235,7 +249,7 @@ def generate_with_endpoint(profile_id: str, *, model: str, prompt: str, system_p
                     body["format"] = options.get("json_schema") if options.get("output_format") == "json_schema" and isinstance(options.get("json_schema"), dict) else "json"
                 if "enable_thinking" in options:
                     body["think"] = bool(options["enable_thinking"])
-                response = client.post(f"{profile['base_url']}/api/chat", headers=headers, json=body)
+                response = client.post(f"{base_url}/api/chat", headers=headers, json=body)
                 response.raise_for_status()
                 payload = response.json()
                 return str((payload.get("message") or {}).get("content") or "")[:200_000]

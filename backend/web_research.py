@@ -112,12 +112,15 @@ def _searxng_url() -> str:
         port = parsed.port
     except ValueError as exc:
         raise WebResearchError("SEARXNG_URL is malformed", "search_backend_invalid") from exc
-    if parsed.scheme != "http" or parsed.hostname != "127.0.0.1" or parsed.username or parsed.password or parsed.query or parsed.fragment:
-        raise WebResearchError("SEARXNG_URL must be an unauthenticated loopback HTTP URL", "search_backend_invalid")
+    hostname = (parsed.hostname or "").lower()
+    docker_service = os.getenv("WORKSPACE_DOCKER_MODE", "").strip().lower() in {"1", "true", "yes", "on"} and hostname == "searxng"
+    if parsed.scheme != "http" or (hostname != "127.0.0.1" and not docker_service) or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise WebResearchError("SEARXNG_URL must be an unauthenticated loopback URL or the Docker searxng service when WORKSPACE_DOCKER_MODE=1", "search_backend_invalid")
     if port is None:
         port = 80
     path = parsed.path.rstrip("/")
-    return urlunsplit(("http", "127.0.0.1", f"{port}" if port != 80 else "", path, ""))
+    netloc = hostname if port == 80 else f"{hostname}:{port}"
+    return urlunsplit(("http", netloc, path, "", ""))
 
 
 def _is_public_address(host: str) -> bool:
@@ -442,7 +445,11 @@ def web_preflight() -> dict[str, Any]:
     except WebResearchError as exc:
         return {"ready": False, "failure_class": exc.failure_class, "detail": exc.detail}
     try:
-        with httpx.Client(base_url=f"{base}/", timeout=1.5, trust_env=False, headers={"User-Agent": USER_AGENT}) as client:
+        try:
+            timeout_seconds = min(max(float(os.getenv("SEARXNG_PREFLIGHT_TIMEOUT_SECONDS", "5")), 1.5), 10.0)
+        except ValueError:
+            timeout_seconds = 5.0
+        with httpx.Client(base_url=f"{base}/", timeout=timeout_seconds, trust_env=False, headers={"User-Agent": USER_AGENT}) as client:
             response = client.get("search", params={"q": "workspace readiness", "format": "json", "categories": "general", "safesearch": 1})
             if response.status_code >= 400:
                 return {"ready": False, "failure_class": "search_backend_http_error", "detail": f"SearXNG returned HTTP {response.status_code}"}

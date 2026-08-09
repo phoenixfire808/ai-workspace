@@ -6,7 +6,7 @@ from urllib.parse import urlsplit
 import httpx
 from pydantic import BaseModel, Field
 
-from .ollama_control import DEFAULT_OLLAMA_BASE_URL, DEFAULT_OLLAMA_MODEL
+from .ollama_control import DEFAULT_OLLAMA_BASE_URL, DEFAULT_OLLAMA_MODEL, safe_ollama_base_url
 
 
 class GpuLane(BaseModel):
@@ -91,7 +91,10 @@ def _model_preflight(endpoint: str | None, expected_model: str) -> dict[str, Any
     if not endpoint:
         return {"status": "not-provisioned", "exact_model": False, "model_ids": []}
     try:
-        safe_endpoint = _safe_loopback_endpoint(endpoint)
+        if endpoint.rstrip("/") == f"{DEFAULT_OLLAMA_BASE_URL}/v1":
+            safe_endpoint = f"{safe_ollama_base_url()}/v1"
+        else:
+            safe_endpoint = _safe_loopback_endpoint(endpoint)
         with httpx.Client(timeout=2.0, trust_env=False) as client:
             response = client.get(f"{safe_endpoint}/models")
             response.raise_for_status()

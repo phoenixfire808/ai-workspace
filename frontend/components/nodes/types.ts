@@ -1,7 +1,9 @@
 import type { Node } from "@xyflow/react";
 
 export type NodeKind = "start" | "buzz" | "tts" | "planner" | "coder" | "file" | "task" | "agent" | "tool" | "runtime" | "review" | "chat" | "split" | "merge" | "context" | "plugin" | "delegate" | "search" | "research" | "source_context";
-export type ModelProvider = "minimax" | "ollama" | "openrouter";
+export type ModelProvider = "ollama";
+
+export const EXACT_WORKSPACE_MODEL = "hf.co/mradermacher/LFM2.5-2.6B-UNCENSORED-ABLITERATED-PHILADELPHIA-CLASS-GGUF:Q4_K_M";
 
 export interface WorkspaceNodeData extends Record<string, unknown> {
   label: string;
@@ -14,14 +16,9 @@ export interface WorkspaceNodeData extends Record<string, unknown> {
 export type WorkspaceNode = Node<WorkspaceNodeData, NodeKind>;
 
 export const MODEL_OPTIONS: Record<ModelProvider, { label: string; model: string }> = {
-  minimax: { label: "MiniMax-M3", model: "MiniMax-M3" },
   ollama: {
-    label: "Ollama · installed local models",
-    model: "",
-  },
-  openrouter: {
-    label: "OpenRouter · explicit cloud route",
-    model: "",
+    label: "Ollama · exact local LFM Q4_K_M",
+    model: EXACT_WORKSPACE_MODEL,
   },
 };
 
@@ -66,7 +63,7 @@ export function nodeDefaults(kind: NodeKind): WorkspaceNodeData {
         label: "Planner",
         description: "Turn conversational intent into a structured implementation plan.",
         provider: "ollama",
-        model: "",
+        model: EXACT_WORKSPACE_MODEL,
         system_prompt: "You are the local workflow planner. Return goal, assumptions, ordered steps, risks, and verification.",
         max_tokens: 4096,
       };
@@ -75,7 +72,7 @@ export function nodeDefaults(kind: NodeKind): WorkspaceNodeData {
         label: "Coder model",
         description: "Generate a result with the selected provider.",
         provider: "ollama",
-        model: "",
+        model: EXACT_WORKSPACE_MODEL,
         system_prompt: "You are a precise local coding assistant. Return the most useful direct result for the workflow.",
         temperature: 0.6,
         enable_thinking: true,

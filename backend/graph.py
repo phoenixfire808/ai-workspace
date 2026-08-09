@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import subprocess
 import threading
 import time
@@ -21,7 +20,6 @@ from .hermes_adapter import dispatch_hermes_skill
 from .ollama_control import DEFAULT_OLLAMA_MODEL, preflight_ollama_model
 from .model_settings import resolve_workspace_model
 from .runtime_control import preflight_runtime_profile
-from .model_profiles import generate_with_endpoint
 from .schema import GraphDocument, GraphNode
 from .tools import WORKSPACE_TOOL_CATALOG, WORKSPACE_TOOLS
 
@@ -32,7 +30,6 @@ ALLOWED_BUZZ_MODEL_SIZES = {"tiny", "base", "small", "medium", "large", "large-v
 MAX_FILE_CHARS = 200_000
 _AGENT_PROCESSES: dict[int, subprocess.Popen[str]] = {}
 _AGENT_PROCESSES_LOCK = threading.Lock()
-DEFAULT_MINIMAX_MODEL = "MiniMax-M3"
 
 DEFAULT_PLANNER_PROMPT = (
     "You are the local workflow planner. Convert the supplied user intent into a concise, "
@@ -176,9 +173,12 @@ def _model_timeout_seconds() -> float:
 
 
 def _enforce_model_policy(model: str) -> str:
-    if re.search(r"qwen[\s/_-]*2\.5", model, flags=re.IGNORECASE):
-        raise NodeExecutionError("Qwen 2.5 models are not permitted in this workspace", "model_policy_rejected")
-    return model
+    if model.strip() != DEFAULT_OLLAMA_MODEL:
+        raise NodeExecutionError(
+            "M⊕ is locked to the exact approved local Ollama model",
+            "model_policy_rejected",
+        )
+    return DEFAULT_OLLAMA_MODEL
 
 
 def transcribe_audio(file_path: str, model_size: str, root: Path) -> str:
@@ -224,41 +224,6 @@ def transcribe_audio(file_path: str, model_size: str, root: Path) -> str:
     except OSError as exc:
         raise NodeExecutionError("the transcript output could not be read", "buzz_output_unreadable") from exc
 
-
-
-def _minimax_output(prompt: str, data: dict[str, Any]) -> str:
-    try:
-        from langchain_core.messages import HumanMessage, SystemMessage
-        from langchain_openai import ChatOpenAI
-    except ImportError as exc:
-        raise NodeExecutionError("MiniMax integration dependencies are not installed", "minimax_dependency_missing") from exc
-
-    model = _enforce_model_policy(str(data.get("model") or os.getenv("MINIMAX_MODEL", DEFAULT_MINIMAX_MODEL)))
-    base_url = os.getenv("MINIMAX_BASE_URL", "").strip()
-    api_key = os.getenv("MINIMAX_API_KEY", "").strip()
-    if not base_url or not api_key:
-        raise NodeExecutionError(
-            "MiniMax is selected but MINIMAX_BASE_URL and MINIMAX_API_KEY are not configured",
-            "minimax_not_configured",
-        )
-    system_prompt = str(
-        data.get("system_prompt")
-        or "You are a precise coding assistant. Return the most useful direct result for the workflow."
-    )
-    try:
-        llm = ChatOpenAI(
-            model=model,
-            temperature=float(data.get("temperature", 0.1)),
-            base_url=base_url,
-            api_key=api_key,
-            timeout=_model_timeout_seconds(),
-            max_retries=1,
-        )
-        response = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=prompt)])
-    except Exception as exc:
-        raise NodeExecutionError("MiniMax generation failed; check the configured endpoint", "minimax_failed") from exc
-    content = response.content if isinstance(response.content, str) else str(response.content)
-    return content[:MAX_FILE_CHARS]
 
 
 def _ollama_output(prompt: str, data: dict[str, Any]) -> str:
@@ -307,12 +272,13 @@ def _ollama_output(prompt: str, data: dict[str, Any]) -> str:
 def _model_output(prompt: str, data: dict[str, Any]) -> str:
     endpoint_profile = str(data.get("endpoint_profile") or "").strip()
     if endpoint_profile:
-        try:
-            return generate_with_endpoint(endpoint_profile, model=str(data.get("model") or ""), prompt=prompt, system_prompt=str(data.get("system_prompt") or ""), settings=data)
-        except KeyError as exc:
-            raise NodeExecutionError("the selected endpoint profile is not registered", "endpoint_profile_unknown") from exc
-        except (RuntimeError, ValueError) as exc:
-            raise NodeExecutionError("the selected endpoint could not generate a response", "endpoint_generation_failed") from exc
+        if endpoint_profile != "local-ollama":
+            raise NodeExecutionError(
+                "endpoint profiles other than the exact local Ollama route are disabled",
+                "model_policy_rejected",
+            )
+        local_data = {**data, "provider": "ollama", "model": DEFAULT_OLLAMA_MODEL, "endpoint_profile": ""}
+        return _ollama_output(prompt, local_data)
     provider = str(data.get("provider") or os.getenv("WORKSPACE_MODEL_PROVIDER", "ollama")).strip().lower()
     if provider == "nanbeige":
         raise NodeExecutionError("Nanbeige has been retired from M⊕", "nanbeige_retired_from_workspace")
@@ -321,17 +287,13 @@ def _model_output(prompt: str, data: dict[str, Any]) -> str:
         if str(legacy_data.get("model") or "") == "LFM2.5-2.6B":
             legacy_data["model"] = ""
         return _ollama_output(prompt, legacy_data)
-    if provider in {"minimax", "minimax-oauth"}:
-        return _minimax_output(prompt, data)
     if provider == "ollama":
         return _ollama_output(prompt, data)
-    if provider == "openrouter":
-        try:
-            return generate_with_endpoint("openrouter", model=str(data.get("model") or ""), prompt=prompt, system_prompt=str(data.get("system_prompt") or ""), settings=data)
-        except KeyError as exc:
-            raise NodeExecutionError("the OpenRouter endpoint profile is not registered", "openrouter_profile_unknown") from exc
-        except (RuntimeError, ValueError) as exc:
-            raise NodeExecutionError("OpenRouter is not ready or rejected the request", "openrouter_not_ready") from exc
+    if provider in {"minimax", "minimax-oauth", "openrouter"}:
+        raise NodeExecutionError(
+            "M⊕ is locked to the exact approved local Ollama model",
+            "model_policy_rejected",
+        )
     raise NodeExecutionError("unsupported coder model provider", "model_provider_invalid")
 
 

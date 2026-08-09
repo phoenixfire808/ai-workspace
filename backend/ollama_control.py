@@ -26,9 +26,11 @@ class OllamaPreflightPayload(BaseModel):
 def safe_ollama_base_url(raw: str | None = None) -> str:
     value = (raw if raw is not None else os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL)).strip().rstrip("/")
     parsed = urlsplit(value)
+    hostname = (parsed.hostname or "").lower()
+    docker_service = os.getenv("WORKSPACE_DOCKER_MODE", "").strip().lower() in {"1", "true", "yes", "on"} and hostname == "ollama"
     if (
         parsed.scheme != "http"
-        or parsed.hostname != "127.0.0.1"
+        or (hostname != "127.0.0.1" and not docker_service)
         or parsed.port is None
         or parsed.username is not None
         or parsed.password is not None
@@ -36,8 +38,8 @@ def safe_ollama_base_url(raw: str | None = None) -> str:
         or parsed.query
         or parsed.fragment
     ):
-        raise ValueError("OLLAMA_BASE_URL must be an unauthenticated http://127.0.0.1:<port> URL")
-    return f"http://127.0.0.1:{parsed.port}"
+        raise ValueError("OLLAMA_BASE_URL must be an unauthenticated loopback URL or the Docker ollama service when WORKSPACE_DOCKER_MODE=1")
+    return f"http://{hostname}:{parsed.port}"
 
 
 def _failure_result(base_url: str, status: str, failure_class: str) -> dict[str, Any]:
@@ -47,7 +49,10 @@ def _failure_result(base_url: str, status: str, failure_class: str) -> dict[str,
         "base_url": base_url,
         "models": [],
         "openai_models": [],
-        "default_model": os.getenv("OLLAMA_MODEL", "").strip() or DEFAULT_OLLAMA_MODEL,
+        "default_model": DEFAULT_OLLAMA_MODEL,
+        "approved_model": DEFAULT_OLLAMA_MODEL,
+        "allowed_models": [DEFAULT_OLLAMA_MODEL],
+        "model_policy": "exact_only",
         "mutation": "none",
     }
 
@@ -103,22 +108,38 @@ def list_ollama_models() -> dict[str, Any]:
             continue
         models.append(model.model_dump(mode="json"))
     names = [item["name"] for item in models]
-    configured = os.getenv("OLLAMA_MODEL", "").strip()
-    default_model = configured or DEFAULT_OLLAMA_MODEL
     return {
         "status": "ready",
         "failure_class": None,
         "base_url": base_url,
         "models": models,
         "openai_models": sorted(openai_ids),
-        "default_model": default_model,
+        "default_model": DEFAULT_OLLAMA_MODEL,
+        "approved_model": DEFAULT_OLLAMA_MODEL,
+        "allowed_models": [DEFAULT_OLLAMA_MODEL],
+        "model_policy": "exact_only",
         "mutation": "none",
     }
 
 
 def preflight_ollama_model(model: str | None = None) -> dict[str, Any]:
+    requested = (model or os.getenv("OLLAMA_MODEL", "").strip() or DEFAULT_OLLAMA_MODEL).strip()
+    if requested != DEFAULT_OLLAMA_MODEL:
+        return {
+            "status": "model-policy-mismatch",
+            "failure_class": "ollama_exact_model_required",
+            "base_url": "",
+            "models": [],
+            "openai_models": [],
+            "default_model": DEFAULT_OLLAMA_MODEL,
+            "approved_model": DEFAULT_OLLAMA_MODEL,
+            "allowed_models": [DEFAULT_OLLAMA_MODEL],
+            "model_policy": "exact_only",
+            "model": requested,
+            "exact_model": False,
+            "mutation": "none",
+        }
     inventory = list_ollama_models()
-    requested = (model or os.getenv("OLLAMA_MODEL", "").strip() or inventory.get("default_model") or DEFAULT_OLLAMA_MODEL).strip()
     names = {item["name"] for item in inventory.get("models", []) if isinstance(item, dict) and isinstance(item.get("name"), str)}
     openai_names = set(inventory.get("openai_models", []))
     if inventory.get("status") != "ready":

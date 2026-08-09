@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from .graph import configured_agents, trigger_agent, _model_output
 from .hermes_adapter import hermes_capability_audit, list_hermes_skills
-from .ollama_control import list_ollama_models, preflight_ollama_model
+from .ollama_control import DEFAULT_OLLAMA_MODEL, list_ollama_models, preflight_ollama_model
 from .runtime_control import list_runtime_profiles, preflight_runtime_profile
 from .schema import GraphDocument
 from .tools import APPROVAL_REQUIRED_TOOLS, WORKSPACE_TOOL_CATALOG, WORKSPACE_TOOLS, preview_workspace_mutation
@@ -194,13 +194,6 @@ def _template_graph(template: dict[str, Any], options: dict[str, Any] | None = N
     return {"nodes": nodes, "edges": edges}
 
 
-def _static_model_readiness(provider: str) -> tuple[bool, str | None]:
-    if provider == "minimax":
-        if not os.getenv("MINIMAX_BASE_URL", "").strip() or not os.getenv("MINIMAX_API_KEY", "").strip():
-            return False, "minimax_not_configured"
-    return True, None
-
-
 def library_resources() -> list[LibraryResource]:
     resources: list[LibraryResource] = []
     web_status = web_preflight()
@@ -257,6 +250,8 @@ def library_resources() -> list[LibraryResource]:
         if not isinstance(model, dict) or not model.get("name"):
             continue
         name = str(model["name"])
+        if name != DEFAULT_OLLAMA_MODEL:
+            continue
         resources.append(
             LibraryResource(
                 resource_id=f"model:ollama:{name}",
@@ -273,26 +268,7 @@ def library_resources() -> list[LibraryResource]:
                 metadata={"size": model.get("size"), "openai_advertised": model.get("openai_advertised", False)},
             )
         )
-    static_models = [
-        ("minimax", "MiniMax-M3", "Explicit configured MiniMax route"),
-    ]
-    for provider, model, description in static_models:
-        ready, disabled_reason = _static_model_readiness(provider)
-        resources.append(
-            LibraryResource(
-                resource_id=f"model:{provider}:{model}",
-                category="model",
-                label=f"{provider} · {model}",
-                description=description,
-                scope="model-route",
-                ready=ready,
-                disabled_reason=disabled_reason,
-                capabilities=["add_to_canvas", "run_now"],
-                arguments_schema={"type": "object", "properties": {"prompt": {"type": "string", "title": "Prompt"}}, "required": ["prompt"]},
-                provider=provider,
-                model=model,
-            )
-        )
+
     for profile in list_runtime_profiles():
         resources.append(
             LibraryResource(

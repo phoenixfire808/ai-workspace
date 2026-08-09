@@ -25,7 +25,6 @@ from .agent_engine import (
     stream_lfm_events,
 )
 from .graph import (
-    DEFAULT_MINIMAX_MODEL,
     GraphValidationError,
     configured_agents,
     run_graph,
@@ -173,7 +172,8 @@ def health() -> dict[str, Any]:
         "fallback_policy": "explicit_only",
         "ollama_base_url": os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL),
         "ollama_model": setting["model"],
-        "minimax_model": os.getenv("MINIMAX_MODEL", DEFAULT_MINIMAX_MODEL),
+        "approved_model": DEFAULT_LFM_MODEL,
+        "model_policy": "exact_only",
         "buzz_on_path": shutil.which(os.getenv("BUZZ_EXECUTABLE", "buzz")) is not None,
         "configured_agents": configured_agents(),
     }
