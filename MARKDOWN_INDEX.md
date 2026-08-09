@@ -1,4 +1,4 @@
-# M⊕ Markdown Document Control Index
+# Refactor Workflow Studio Markdown Document Control Index
 
 **Owner:** primary Jarvis session
 **Workspace:** `C:\Users\Drew\Documents\Jarvis_Context\Projects\ai-workspace`

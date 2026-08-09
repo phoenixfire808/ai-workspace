@@ -114,8 +114,13 @@ def _searxng_url() -> str:
         raise WebResearchError("SEARXNG_URL is malformed", "search_backend_invalid") from exc
     hostname = (parsed.hostname or "").lower()
     docker_service = os.getenv("WORKSPACE_DOCKER_MODE", "").strip().lower() in {"1", "true", "yes", "on"} and hostname == "searxng"
-    if parsed.scheme != "http" or (hostname != "127.0.0.1" and not docker_service) or parsed.username or parsed.password or parsed.query or parsed.fragment:
-        raise WebResearchError("SEARXNG_URL must be an unauthenticated loopback URL or the Docker searxng service when WORKSPACE_DOCKER_MODE=1", "search_backend_invalid")
+    # host.docker.internal is allowed regardless of docker_mode because it
+    # resolves to the Docker Desktop host loopback. SearXNG normally runs as
+    # its own container on the host (searxng-hermes) and is reached via this
+    # hostname from inside the backend container.
+    host_docker_internal = hostname == "host.docker.internal"
+    if parsed.scheme != "http" or (hostname != "127.0.0.1" and not docker_service and not host_docker_internal) or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise WebResearchError("SEARXNG_URL must be an unauthenticated loopback URL, host.docker.internal, or the Docker searxng service when WORKSPACE_DOCKER_MODE=1", "search_backend_invalid")
     if port is None:
         port = 80
     path = parsed.path.rstrip("/")

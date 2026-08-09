@@ -1,8 +1,9 @@
-# M⊕ Docker Runbook
+# Refactor Workflow Studio Docker Runbook
 
 ## Status
 
-- **Target:** Docker Compose for the M⊕ frontend, FastAPI backend, exact local Ollama model, and SearXNG.
+- **Target:** Docker Compose for the Refactor Workflow Studio frontend, FastAPI backend, and exact local Ollama model.
+- **SearXNG is intentionally OUT of this compose.** SearXNG runs as its own standalone container (`searxng-hermes`, image `searxng/searxng:latest`) on the host loopback at `127.0.0.1:8888`. The backend reaches it via `host.docker.internal:8888` from inside its container.
 - **Local-only boundary:** all published ports are bound to `127.0.0.1`; no cloud model fallback is enabled.
 - **Exact model:** `hf.co/mradermacher/LFM2.5-2.6B-UNCENSORED-ABLITERATED-PHILADELPHIA-CLASS-GGUF:Q4_K_M`.
 - **Rollback baseline:** the verified native frontend/backend/Ollama launch remains available until Docker acceptance completes.
@@ -12,12 +13,12 @@
 
 | Service | Container | Internal port | Default host port | Persistence |
 |---|---|---:|---:|---|
-| Frontend | `mo-frontend` | 3000 | 3000 | image build |
-| FastAPI | `mo-backend` | 8000 | 8000 | `./` mounted at `/workspace` |
-| Ollama | `mo-ollama` | 11434 | 11434 | host Ollama store `C:/Users/Drew/.ollama` |
-| SearXNG | `mo-searxng` | 8080 | 8888 | Docker-specific `docker/searxng-config` + named cache |
+| Frontend | `rws-frontend` | 3000 | 3000 | image build |
+| FastAPI | `rws-backend` | 8000 | 8000 | `./` mounted at `/workspace` |
+| Ollama | `rws-ollama` | 11434 | 11434 | host Ollama store `C:/Users/Drew/.ollama` |
+| SearXNG (standalone) | `searxng-hermes` | 8080 | 8888 | its own container, not this compose |
 
-For non-disruptive acceptance while native services occupy the default ports, use a temporary env file with host ports `3100`, `8100`, `11435`, and `8889`. Do not delete the native processes or existing `searxng-hermes` container until the smoke is green.
+For non-disruptive acceptance while native services occupy the default ports, use a temporary env file with host ports `3100`, `8100`, and `11435`. SearXNG is independent of this compose and stays on its existing host port `8888`. Do not stop `searxng-hermes` unless an explicit approval is given.
 
 ## First launch
 
@@ -39,16 +40,20 @@ curl http://127.0.0.1:8888/search?q=local+AI\&format=json
 curl http://127.0.0.1:3000
 ```
 
+SearXNG on `:8888` is the standalone `searxng-hermes` container — it is not
+started or stopped by this compose. If you want to manage it explicitly, use
+the standalone file at `docker/searxng/compose.yml`.
+
 Then verify the browser UI reports `ollama` plus the exact LFM tag, run one controlled `/api/debug/llm-test`, validate one one-node graph, and inspect `docker compose ps` for healthy services. Do not treat a container being `Up` as model acceptance.
 
 ## Cutover and rollback
 
 1. Record exact native PIDs and confirm the Docker smoke is green.
-2. Stop only the native M⊕ frontend/backend owners and the old SearXNG container; preserve the container and volumes.
+2. Stop only the native Refactor Workflow Studio frontend/backend owners; the standalone `searxng-hermes` container is unrelated to this compose and must stay running.
 3. Start Compose with the default ports and re-run the acceptance batch.
 4. Roll back with `docker compose --env-file .env.docker down` (do not add `--volumes`), restart the preserved native launchers, and recheck the original health/model receipts.
 
-Never run `docker compose down --volumes` during ordinary rollback: it deletes the SearXNG cache. The Ollama model store is a host bind mount and is preserved independently.
+Never run `docker compose down --volumes` during ordinary rollback: it deletes any persisted volumes. The Ollama model store is a host bind mount and is preserved independently. SearXNG runs in its own container (`searxng-hermes`) and is unaffected by this compose.
 
 ## Research receipts
 

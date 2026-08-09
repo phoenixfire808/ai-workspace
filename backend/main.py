@@ -94,7 +94,7 @@ def _cors_origins() -> list[str]:
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
-app = FastAPI(title="M⊕ AI Visual Workspace API", version="0.1.0")
+app = FastAPI(title="Refactor Workflow Studio API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
@@ -294,13 +294,13 @@ def ollama_preflight(payload: OllamaPreflightPayload) -> dict[str, Any]:
 
 @app.get("/api/settings/model")
 def workspace_model_setting() -> dict[str, Any]:
-    """Return the persistent global M⊕ model selection without mutating it."""
+    """Return the persistent global Refactor Workflow Studio model selection without mutating it."""
     return get_workspace_model_setting()
 
 
 @app.put("/api/settings/model")
 def workspace_model_setting_save(payload: WorkspaceModelPayload) -> dict[str, Any]:
-    """Persist one exact installed Ollama model as the global M⊕ default."""
+    """Persist one exact installed Ollama model as the global Refactor Workflow Studio default."""
     try:
         return save_workspace_model_setting(payload)
     except ValueError as exc:

@@ -175,7 +175,7 @@ def _model_timeout_seconds() -> float:
 def _enforce_model_policy(model: str) -> str:
     if model.strip() != DEFAULT_OLLAMA_MODEL:
         raise NodeExecutionError(
-            "M⊕ is locked to the exact approved local Ollama model",
+            "Refactor Workflow Studio is locked to the exact approved local Ollama model",
             "model_policy_rejected",
         )
     return DEFAULT_OLLAMA_MODEL
@@ -281,7 +281,7 @@ def _model_output(prompt: str, data: dict[str, Any]) -> str:
         return _ollama_output(prompt, local_data)
     provider = str(data.get("provider") or os.getenv("WORKSPACE_MODEL_PROVIDER", "ollama")).strip().lower()
     if provider == "nanbeige":
-        raise NodeExecutionError("Nanbeige has been retired from M⊕", "nanbeige_retired_from_workspace")
+        raise NodeExecutionError("Nanbeige has been retired from Refactor Workflow Studio", "nanbeige_retired_from_workspace")
     if provider == "lfm":
         legacy_data = {**data, "provider": "ollama"}
         if str(legacy_data.get("model") or "") == "LFM2.5-2.6B":
@@ -291,7 +291,7 @@ def _model_output(prompt: str, data: dict[str, Any]) -> str:
         return _ollama_output(prompt, data)
     if provider in {"minimax", "minimax-oauth", "openrouter"}:
         raise NodeExecutionError(
-            "M⊕ is locked to the exact approved local Ollama model",
+            "Refactor Workflow Studio is locked to the exact approved local Ollama model",
             "model_policy_rejected",
         )
     raise NodeExecutionError("unsupported coder model provider", "model_provider_invalid")

@@ -170,7 +170,7 @@ export default function ControlCenterPanel() {
         body: JSON.stringify({ provider: "ollama", model: workspaceModelDraft, hardware_profile_id: workspaceHardwareDraft, fallback_policy: "explicit_only" }),
       });
       setWorkspaceModel(saved);
-      setNotice("Global M⊕ model saved. Chat, Planner, Research, and Coder now resolve this exact model unless explicitly overridden.");
+      setNotice("Global Refactor Workflow Studio model saved. Chat, Planner, Research, and Coder now resolve this exact model unless explicitly overridden.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Workspace model save failed.");
     } finally {

@@ -37,6 +37,19 @@ class DockerRoutingTests(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "SEARXNG_URL"):
             _searxng_url()
 
+    def test_host_docker_internal_accepted_for_standalone_searxng(self) -> None:
+        # host.docker.internal is allowed even when WORKSPACE_DOCKER_MODE=0
+        # because SearXNG normally runs as its own container on the host
+        # (searxng-hermes) and the backend container reaches it via this
+        # hostname. No explicit docker_mode required.
+        os.environ["WORKSPACE_DOCKER_MODE"] = "0"
+        os.environ["SEARXNG_URL"] = "http://host.docker.internal:8888"
+        self.assertEqual(_searxng_url(), "http://host.docker.internal:8888")
+
+        # And the bare loopback is still the default.
+        os.environ.pop("SEARXNG_URL", None)
+        self.assertEqual(_searxng_url(), "http://127.0.0.1:8888")
+
 
 if __name__ == "__main__":
     unittest.main()

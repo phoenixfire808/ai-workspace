@@ -1,0 +1,579 @@
+# Refactor Workflow Studio — standalone SearXNG container (2026-08-09).
+# Carved out of the main Refactor compose stack so SearXNG has its own
+# lifecycle, port, volume, and config. Backed up from docker/searxng-config/settings.yml.
+# Goal: high signal, low timeout. Disable everything not Drew-relevant.
+use_default_settings: false
+
+general:
+  debug: false
+  instance_name: "Refactor Workflow Studio Docker SearXNG"
+  default_doi_resolver: "https://doi.org"
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  formats:
+    - html
+    - json
+
+server:
+  secret_key: "refactor-searxng-standalone-c47ab0ac5942c862989552ba5a25026a7492a8eba9071d5421e35d36aebf3d8a"
+  limiter: false
+  image_proxy: false
+  method: GET
+
+outgoing:
+  request_timeout: 12.0
+  max_request_timeout: 30.0
+  pool_connections: 100
+  pool_maxsize: 20
+
+engines:
+  - name: bing
+    disabled: false
+  - name: duckduckgo
+    disabled: false
+  - name: mojeek
+    disabled: false
+  - name: wikidata
+    disabled: false
+  - name: wikipedia
+    disabled: false
+  - name: arch linux wiki
+    disabled: false
+  - name: askubuntu
+    disabled: false
+  - name: docker hub
+    disabled: false
+  - name: gentoo
+    disabled: false
+  - name: github
+    disabled: false
+  - name: hackernews
+    disabled: false
+  - name: hoogle
+    disabled: false
+  - name: mankier
+    disabled: false
+  - name: mdn
+    disabled: false
+  - name: pypi
+    disabled: false
+  - name: stackoverflow
+    disabled: false
+  - name: arxiv
+    disabled: false
+  - name: crossref
+    disabled: false
+  - name: google scholar
+    disabled: false
+  - name: openairedatasets
+    disabled: false
+  - name: openairepublications
+    disabled: false
+  - name: pubmed
+    disabled: false
+  - name: semantic scholar
+    disabled: false
+  - name: bing news
+    disabled: false
+  - name: duckduckgo news
+    disabled: false
+  - name: google news
+    disabled: false
+  - name: wikinews
+    disabled: false
+  - name: bing images
+    disabled: false
+  - name: duckduckgo images
+    disabled: false
+  - name: flickr
+    disabled: false
+  - name: google cse images
+    disabled: false
+  - name: openverse
+    disabled: false
+  - name: pexels
+    disabled: false
+  - name: wikicommons.images
+    disabled: false
+  - name: bing videos
+    disabled: false
+  - name: dailymotion
+    disabled: false
+  - name: duckduckgo videos
+    disabled: false
+  - name: sepiasearch
+    disabled: false
+  - name: vimeo
+    disabled: false
+  - name: youtube
+    disabled: false
+  - name: 360search
+    disabled: true
+  - name: 360search videos
+    disabled: true
+  - name: 500px
+    disabled: true
+  - name: 9gag
+    disabled: true
+  - name: abcnyheter
+    disabled: true
+  - name: acfun
+    disabled: true
+  - name: adobe stock
+    disabled: true
+  - name: adobe stock video
+    disabled: true
+  - name: adobe stock audio
+    disabled: true
+  - name: alpine linux packages
+    disabled: true
+  - name: annas archive
+    disabled: true
+  - name: ansa
+    disabled: true
+  - name: apk mirror
+    disabled: true
+  - name: apple app store
+    disabled: true
+  - name: anaconda
+    disabled: true
+  - name: nixos wiki
+    disabled: true
+  - name: artic
+    disabled: true
+  - name: artstation
+    disabled: true
+  - name: ayo
+    disabled: true
+  - name: bandcamp
+    disabled: true
+  - name: baidu
+    disabled: true
+  - name: baidu images
+    disabled: true
+  - name: baidu kaifa
+    disabled: true
+  - name: bilibili
+    disabled: true
+  - name: bitchute
+    disabled: true
+  - name: bitbucket
+    disabled: true
+  - name: boardreader
+    disabled: true
+  - name: bpb
+    disabled: true
+  - name: btdigg
+    disabled: true
+  - name: media.ccc.de
+    disabled: true
+  - name: cachy os packages
+    disabled: true
+  - name: cara
+    disabled: true
+  - name: chefkoch
+    disabled: true
+  - name: crowdview
+    disabled: true
+  - name: yep
+    disabled: true
+  - name: currency
+    disabled: true
+  - name: deezer
+    disabled: true
+  - name: destatis
+    disabled: true
+  - name: deviantart
+    disabled: true
+  - name: devicons
+    disabled: true
+  - name: ddg definitions
+    disabled: true
+  - name: encyclosearch
+    disabled: true
+  - name: erowid
+    disabled: true
+  - name: dogpile
+    disabled: true
+  - name: dogpile images
+    disabled: true
+  - name: dogpile videos
+    disabled: true
+  - name: dogpile news
+    disabled: true
+  - name: duckduckgo web
+    disabled: true
+  - name: duckduckgo weather
+    disabled: true
+  - name: apple maps
+    disabled: true
+  - name: emojipedia
+    disabled: true
+  - name: tineye
+    disabled: true
+  - name: etymonline
+    disabled: true
+  - name: 1x
+    disabled: true
+  - name: fastbot
+    disabled: true
+  - name: fdroid
+    disabled: true
+  - name: findfiles
+    disabled: true
+  - name: findfiles images
+    disabled: true
+  - name: findfiles videos
+    disabled: true
+  - name: findfiles music
+    disabled: true
+  - name: findthatmeme
+    disabled: true
+  - name: fireball
+    disabled: true
+  - name: fireball news
+    disabled: true
+  - name: fireball videos
+    disabled: true
+  - name: flaticon
+    disabled: true
+  - name: free software directory
+    disabled: true
+  - name: frinkiac
+    disabled: true
+  - name: fynd
+    disabled: true
+  - name: fyyd
+    disabled: true
+  - name: gabanza
+    disabled: true
+  - name: geizhals
+    disabled: true
+  - name: genius
+    disabled: true
+  - name: giphy
+    disabled: true
+  - name: gitlab
+    disabled: true
+  - name: codeberg
+    disabled: true
+  - name: gitea.com
+    disabled: true
+  - name: gmx
+    disabled: true
+  - name: goodreads
+    disabled: true
+  - name: google cse
+    disabled: true
+  - name: google play apps
+    disabled: true
+  - name: google play movies
+    disabled: true
+  - name: material icons
+    disabled: true
+  - name: habrahabr
+    disabled: true
+  - name: hex
+    disabled: true
+  - name: crates.io
+    disabled: true
+  - name: il post
+    disabled: true
+  - name: huggingface
+    disabled: true
+  - name: huggingface datasets
+    disabled: true
+  - name: huggingface spaces
+    disabled: true
+  - name: imdb
+    disabled: true
+  - name: imgur
+    disabled: true
+  - name: ina
+    disabled: true
+  - name: ipernity
+    disabled: true
+  - name: iqiyi
+    disabled: true
+  - name: jisho
+    disabled: true
+  - name: kickass
+    disabled: true
+  - name: lemmy communities
+    disabled: true
+  - name: lemmy users
+    disabled: true
+  - name: lemmy posts
+    disabled: true
+  - name: lemmy comments
+    disabled: true
+  - name: library genesis
+    disabled: true
+  - name: library of congress
+    disabled: true
+  - name: lingva
+    disabled: true
+  - name: lobste.rs
+    disabled: true
+  - name: lucide
+    disabled: true
+  - name: magnific
+    disabled: true
+  - name: mastodon users
+    disabled: true
+  - name: mastodon hashtags
+    disabled: true
+  - name: metacpan
+    disabled: true
+  - name: microsoft learn
+    disabled: true
+  - name: mixcloud
+    disabled: true
+  - name: mozhi
+    disabled: true
+  - name: mwmbl
+    disabled: true
+  - name: niconico
+    disabled: true
+  - name: npm
+    disabled: true
+  - name: nyaa
+    disabled: true
+  - name: odysee
+    disabled: true
+  - name: ollama
+    disabled: true
+  - name: openalex
+    disabled: true
+  - name: openlibrary
+    disabled: true
+  - name: openmeteo
+    disabled: true
+  - name: openstreetmap
+    disabled: true
+  - name: openrepos
+    disabled: true
+  - name: packagist
+    disabled: true
+  - name: pdbe
+    disabled: true
+  - name: photon
+    disabled: true
+  - name: picjumbo
+    disabled: true
+  - name: pinterest
+    disabled: true
+  - name: piratebay
+    disabled: true
+  - name: pixabay images
+    disabled: true
+  - name: pixabay videos
+    disabled: true
+  - name: podchaser
+    disabled: true
+  - name: pub.dev
+    disabled: true
+  - name: public domain image archive
+    disabled: true
+  - name: quark
+    disabled: true
+  - name: quark images
+    disabled: true
+  - name: qwant
+    disabled: true
+  - name: qwant news
+    disabled: true
+  - name: qwant images
+    disabled: true
+  - name: qwant videos
+    disabled: true
+  - name: radio browser
+    disabled: true
+  - name: reuters
+    disabled: true
+  - name: rottentomatoes
+    disabled: true
+  - name: searchmysite
+    disabled: true
+  - name: selfhst icons
+    disabled: true
+  - name: shopify stock
+    disabled: true
+  - name: sogou
+    disabled: true
+  - name: sogou images
+    disabled: true
+  - name: sogou videos
+    disabled: true
+  - name: sogou wechat
+    disabled: true
+  - name: soundcloud
+    disabled: true
+  - name: stocksnap
+    disabled: true
+  - name: superuser
+    disabled: true
+  - name: discuss.python
+    disabled: true
+  - name: caddy.community
+    disabled: true
+  - name: pi-hole.community
+    disabled: true
+  - name: privacywall
+    disabled: true
+  - name: privacywall images
+    disabled: true
+  - name: privacywall videos
+    disabled: true
+  - name: startpage
+    disabled: true
+  - name: startpage news
+    disabled: true
+  - name: startpage images
+    disabled: true
+  - name: steam
+    disabled: true
+  - name: tokyotoshokan
+    disabled: true
+  - name: solidtorrents
+    disabled: true
+  - name: tagesschau
+    disabled: true
+  - name: tmdb
+    disabled: true
+  - name: tusksearch
+    disabled: true
+  - name: tusksearch images
+    disabled: true
+  - name: tusksearch videos
+    disabled: true
+  - name: tusksearch news
+    disabled: true
+  - name: unsplash
+    disabled: true
+  - name: yandex
+    disabled: true
+  - name: yandex images
+    disabled: true
+  - name: yandex music
+    disabled: true
+  - name: yahoo
+    disabled: true
+  - name: wiby
+    disabled: true
+  - name: wikibooks
+    disabled: true
+  - name: wikiquote
+    disabled: true
+  - name: wikisource
+    disabled: true
+  - name: wikispecies
+    disabled: true
+  - name: wiktionary
+    disabled: true
+  - name: wikiversity
+    disabled: true
+  - name: wikivoyage
+    disabled: true
+  - name: wikicommons.videos
+    disabled: true
+  - name: wikicommons.audio
+    disabled: true
+  - name: wikicommons.files
+    disabled: true
+  - name: wolframalpha
+    disabled: true
+  - name: dictzone
+    disabled: true
+  - name: mymemory translated
+    disabled: true
+  - name: 1337x
+    disabled: true
+  - name: duden
+    disabled: true
+  - name: seznam
+    disabled: true
+  - name: mojeek images
+    disabled: true
+  - name: mojeek news
+    disabled: true
+  - name: moviepilot
+    disabled: true
+  - name: national vulnerability database
+    disabled: true
+  - name: naver
+    disabled: true
+  - name: naver images
+    disabled: true
+  - name: naver news
+    disabled: true
+  - name: naver videos
+    disabled: true
+  - name: rubygems
+    disabled: true
+  - name: peertube
+    disabled: true
+  - name: mediathekviewweb
+    disabled: true
+  - name: yacy
+    disabled: true
+  - name: yacy images
+    disabled: true
+  - name: rumble
+    disabled: true
+  - name: reloado
+    disabled: true
+  - name: resulthunter
+    disabled: true
+  - name: resulthunter images
+    disabled: true
+  - name: searchch
+    disabled: true
+  - name: wordnik
+    disabled: true
+  - name: woxikon.de synonyme
+    disabled: true
+  - name: tootfinder
+    disabled: true
+  - name: uxwing
+    disabled: true
+  - name: voidlinux
+    disabled: true
+  - name: vuhuv
+    disabled: true
+  - name: vuhuv images
+    disabled: true
+  - name: vuhuv videos
+    disabled: true
+  - name: wikimini
+    disabled: true
+  - name: wttr.in
+    disabled: true
+  - name: zapmeta
+    disabled: true
+  - name: brave
+    disabled: true
+  - name: brave.images
+    disabled: true
+  - name: brave.videos
+    disabled: true
+  - name: brave.news
+    disabled: true
+  - name: lib.rs
+    disabled: true
+  - name: sourcehut
+    disabled: true
+  - name: bt4g
+    disabled: true
+  - name: pkg.go.dev
+    disabled: true
+  - name: senscritique
+    disabled: true
+  - name: minecraft wiki
+    disabled: true
+  - name: searchtoday
+    disabled: true
+  - name: infospace
+    disabled: true

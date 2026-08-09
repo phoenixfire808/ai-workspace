@@ -1,11 +1,11 @@
-# M⊕ AI Visual Workspace — Canonical Project Tracker
+# Refactor Workflow Studio — Canonical Project Tracker
 
 > This is the source of truth for the project roadmap, decisions, implementation state, verification receipts, and remaining work. Update it after every meaningful scope, architecture, file, dependency, or verification change.
 
 ## 1. Current status
 
-- **Phase:** Phase 27 — Nanbeige retired, LFM2.5-2.6B Q4_K_M persistent global default, option registry complete
-- **Status:** M⊕ build live at http://127.0.0.1:8000 with new global Ollama model selector; Nanbeige fully retired from M⊕; option catalog UI mounted; 26/26 tests pass; model saved to SQLite; source pushed and PR updated
+- **Phase:** Phase 44 — Project renamed from M⊕ AI Visual Workspace → Refactor Workflow Studio; Docker stack cut over to `rws-*` containers on smoke ports; exact LFM model lock preserved.
+- **Status:** Refactor Workflow Studio live at http://127.0.0.1:8100 (Docker smoke) and http://127.0.0.1:8000 (native baseline); rename propagated across FastAPI title, frontend `<title>`, brand banner, ChatPanel, ControlCenterPanel, `package.json`, planner note, model profile labels, runtime control label, upgrade inventory label, options registry header, runbook, README, and ROADMAP.md. Historical entries below preserve the original M⊕ references as written at the time.
 - **Workspace:** `C:\Users\Drew\Documents\Jarvis_Context\Projects\ai-workspace`
 - **Last verified:** 2026-08-07 13:51 CDT
 - **Current parent todo:** Phase 27 complete; real model generation smoke, frontend build, and tracker finalization are next

@@ -1,0 +1,40 @@
+# Standalone SearXNG container for Refactor Workflow Studio.
+#
+# This file is intentionally self-contained: it pulls the official
+# `searxng/searxng:latest` image (already in the local Docker cache),
+# bind-mounts its own config and cache, binds only to loopback, and runs
+# under its own Docker Compose project so it has an independent lifecycle
+# from the main Refactor stack.
+#
+# Usage:
+#   docker compose --env-file .env.searxng -f docker/searxng/compose.yml up -d
+#   docker compose --env-file .env.searxng -f docker/searxng/compose.yml ps
+#   docker compose --env-file .env.searxng -f docker/searxng/compose.yml logs
+#   docker compose --env-file .env.searxng -f docker/searxng/compose.yml down
+#
+# To start it under the same project as the main stack for testing:
+#   docker compose -f docker/searxng/compose.yml --project-name refactor-searxng up -d
+
+name: refactor-searxng
+
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: refactor-searxng
+    restart: unless-stopped
+    init: true
+    ports:
+      - "127.0.0.1:${SEARXNG_HOST_PORT:-8890}:8080"
+    volumes:
+      - ./settings.yml:/etc/searxng/settings.yml:ro
+      - searxng_cache:/var/cache/searxng
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/', timeout=5)"]
+      interval: 15s
+      timeout: 8s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  searxng_cache:
+    name: refactor-searxng-cache

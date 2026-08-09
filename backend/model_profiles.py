@@ -42,9 +42,9 @@ class HardwareProfilePayload(BaseModel):
 
 
 _DEFAULT_ENDPOINTS = (
-    {"id": "local-ollama", "name": "M⊕ local Ollama", "provider_kind": "ollama", "base_url": "http://127.0.0.1:11434", "credential_alias": "", "settings": {"model": DEFAULT_OLLAMA_MODEL, "fallback_policy": "explicit_only", "keep_alive": "5m"}, "enabled": True, "managed": False},
+    {"id": "local-ollama", "name": "Refactor Workflow Studio local Ollama", "provider_kind": "ollama", "base_url": "http://127.0.0.1:11434", "credential_alias": "", "settings": {"model": DEFAULT_OLLAMA_MODEL, "fallback_policy": "explicit_only", "keep_alive": "5m"}, "enabled": True, "managed": False},
     {"id": "ollama-cloud", "name": "Ollama Cloud direct", "provider_kind": "ollama_cloud", "base_url": "https://ollama.com", "credential_alias": "env:OLLAMA_API_KEY", "settings": {"fallback_policy": "explicit_only"}, "enabled": False, "managed": False},
-    {"id": "openrouter", "name": "OpenRouter · explicit cloud route", "provider_kind": "openrouter", "base_url": "https://openrouter.ai/api/v1", "credential_alias": "env:OPENROUTER_API_KEY", "settings": {"model": "", "fallback_policy": "explicit_only", "x_title": "M⊕ AI Visual Workspace"}, "enabled": False, "managed": False},
+    {"id": "openrouter", "name": "OpenRouter · explicit cloud route", "provider_kind": "openrouter", "base_url": "https://openrouter.ai/api/v1", "credential_alias": "env:OPENROUTER_API_KEY", "settings": {"model": "", "fallback_policy": "explicit_only", "x_title": "Refactor Workflow Studio"}, "enabled": False, "managed": False},
 )
 _DEFAULT_HARDWARE = (
     {"id": "auto", "name": "Automatic placement", "mode": "auto", "device_ids": [], "settings": {"vram_reserve_mb": 1024, "max_loaded_models": 1}},
@@ -123,7 +123,7 @@ def list_endpoint_profiles(include_readiness: bool = False) -> list[dict[str, An
 
 def save_endpoint_profile(payload: EndpointProfilePayload) -> dict[str, Any]:
     if payload.provider_kind != "ollama":
-        raise ValueError("M⊕ is locked to the exact local Ollama endpoint")
+        raise ValueError("Refactor Workflow Studio is locked to the exact local Ollama endpoint")
     profile_id = payload.id or f"endpoint-{uuid.uuid4().hex[:12]}"
     base_url = _normalized_url(payload.base_url)
     if payload.provider_kind == "openrouter" and urlsplit(base_url).hostname not in {"openrouter.ai", "www.openrouter.ai"}:

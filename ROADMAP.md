@@ -1,4 +1,4 @@
-# M⊕ AI Visual Workspace — Roadmap (maintained)
+# Refactor Workflow Studio — Roadmap (maintained)
 
 > **Source of truth for plans.** Detailed frozen plans live in
 > `.hermes/plans/`. Implementation state and receipts live in
@@ -183,8 +183,9 @@ link the new plan file from §2 and update the affected phases.
 
 | Date | Phase | Change | SHA(s) |
 |---|---|---|---|
+| 2026-08-08 | 44 | **Rename to Refactor Workflow Studio.** Display, FastAPI title, brand banner, ChatPanel, ControlCenterPanel, planner note, `package.json`, all model-profile / runtime / upgrade labels, options registry header, runbook, README, ROADMAP, plan titles, tracker header. Compose project + container names + volume + network → `refactor` / `rws-*`. SearXNG `secret_key` rotated. GitHub repo name + PR #1 preserved. | `(next)` |
 | 2026-08-08 | 50/60 | Add option registry / Run Inspector / endpoint profiles (durable runtime slice) | `a72a8ff`, `0088f54`, `5fee07c`, `0fd2797`, `691d862` |
-| 2026-08-08 | 27 | Retire Nanbeige from M⊕, pin exact LFM as global default | `c69c3ff`, `05c71ee` |
+| 2026-08-08 | 27 | Retire Nanbeige from Refactor Workflow Studio, pin exact LFM as global default | `c69c3ff`, `05c71ee` |
 | 2026-08-07 | 26 | Resizable workspace panels shipped | `470fe60` |
 | 2026-08-07 | 25 | Unified Local Library shipped | `0088f54`, `b1835bb` |
 | 2026-08-07 | 50 | Durable HITL runtime plan approved | `.hermes/plans/2026-08-07_014925-...md` |

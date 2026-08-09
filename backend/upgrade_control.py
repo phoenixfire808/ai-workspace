@@ -26,7 +26,7 @@ def _present_item(item_id: str, label: str, path: Path, kind: str) -> dict[str, 
 
 def upgrade_inventory() -> dict[str, Any]:
     items = [
-        _present_item("workspace", "M⊕ workspace", PROJECT_ROOT, "application"),
+        _present_item("workspace", "Refactor Workflow Studio workspace", PROJECT_ROOT, "application"),
         _present_item("backend-requirements", "Backend dependency manifest", PROJECT_ROOT / "backend" / "requirements.txt", "dependency-manifest"),
         _present_item("frontend-package", "Frontend dependency manifest", PROJECT_ROOT / "frontend" / "package.json", "dependency-manifest"),
 

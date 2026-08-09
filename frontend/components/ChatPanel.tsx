@@ -155,7 +155,7 @@ export default function ChatPanel() {
       <p className="panel-copy">LFM is opt-in for this chat route. Read-only workspace tools can run automatically; code execution and Hermes dispatch pause for approval.</p>
       <div className="chat-transcript" aria-live="polite">
         {messages.length === 0 && <div className="chat-empty">Ask for a plan, codebase inspection, or bounded local computation.</div>}
-        {messages.map((message) => <div key={message.id} className={`chat-message chat-${message.role}`}><span>{message.role === "user" ? "YOU" : message.role === "event" ? "EVENT" : "M⊕"}</span><p>{message.content || (message.role === "assistant" ? "…" : "")}</p></div>)}
+        {messages.map((message) => <div key={message.id} className={`chat-message chat-${message.role}`}><span>{message.role === "user" ? "YOU" : message.role === "event" ? "EVENT" : "RWS"}</span><p>{message.content || (message.role === "assistant" ? "…" : "")}</p></div>)}
       </div>
       {pendingTools.length > 0 && (
         <div className="chat-approval">

@@ -1,4 +1,4 @@
-# M⊕ Option-Complete Product Roadmap and Branch-Worker Integration Plan
+# Refactor Workflow Studio Option-Complete Product Roadmap and Branch-Worker Integration Plan
 
 > **For Hermes and branch workers:** This project remains parent-owned by default. Do not spawn or dispatch workers unless Drew explicitly authorizes them. When Drew adds branch workers, each worker must use a separate branch/worktree, claim disjoint files, read this roadmap plus `PROJECT_TRACKER.md`, and publish a complete handoff receipt before integration.
 
@@ -929,7 +929,7 @@ No phase is “done” because the UI renders. The selected option must be valid
 
 ## 11. Current checkpoint
 
-**GOAL:** Make M⊕ option-complete across workflow, model, hardware, tools, research, voice, terminal, upgrades, feedback, UI, security, and worker orchestration while preserving local-first safety, explicit external approvals, and parent-controlled integration.
+**GOAL:** Make Refactor Workflow Studio option-complete across workflow, model, hardware, tools, research, voice, terminal, upgrades, feedback, UI, security, and worker orchestration while preserving local-first safety, explicit external approvals, and parent-controlled integration.
 
 ### Done
 

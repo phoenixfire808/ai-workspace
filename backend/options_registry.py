@@ -248,7 +248,7 @@ def option_inventory() -> dict[str, Any]:
 
 def option_inventory_markdown(inventory: dict[str, Any]) -> str:
     lines = [
-        "# M⊕ option registry",
+        "# Refactor Workflow Studio option registry",
         "",
         f"Generated: `{inventory['generated_at']}`",
         "",

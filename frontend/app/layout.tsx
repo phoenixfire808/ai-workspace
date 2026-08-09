@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "M⊕ AI Visual Workspace",
+  title: "Refactor Workflow Studio",
   description: "Local-first visual workflow composition for coding and agent reactions.",
 };
 

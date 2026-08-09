@@ -579,9 +579,9 @@ export default function Canvas() {
     <div className="workspace-shell">
       <header className="topbar">
         <div className="brand-lockup">
-          <div className="brand-mark">M⊕</div>
+          <div className="brand-mark">RWS</div>
           <div>
-            <div className="brand-title">AI Visual Workspace</div>
+            <div className="brand-title">Refactor Workflow Studio</div>
             <div className="brand-subtitle">Local-first workflow composition</div>
           </div>
         </div>

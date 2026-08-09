@@ -1,1 +1,1 @@
-"""M⊕ AI Visual Workspace backend package."""
+"""Refactor Workflow Studio backend package."""

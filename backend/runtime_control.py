@@ -38,7 +38,7 @@ class RuntimeProfile(BaseModel):
 PROFILES: tuple[RuntimeProfile, ...] = (
     RuntimeProfile(
         profile_id="ollama-local-models",
-        label="M⊕ workspace model · Ollama",
+        label="Refactor Workflow Studio workspace model · Ollama",
         provider="ollama",
         model=DEFAULT_OLLAMA_MODEL,
         mode="local-server",

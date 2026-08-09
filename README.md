@@ -1,4 +1,4 @@
-# M⊕ AI Visual Workspace
+# Refactor Workflow Studio
 
 A local-first visual workflow builder for connecting Start, Buzz transcription, coder-model, file I/O, task, and allowlisted agent-reaction nodes. The frontend is Next.js 15 + React Flow; the backend is FastAPI + LangGraph + SQLite.
 
@@ -9,11 +9,11 @@ A local-first visual workflow builder for connecting Start, Buzz transcription, 
 - Windows 10/11 is the supported target.
 - The workspace root is `ai-workspace/`; the backend constrains file reads/writes to `WORKSPACE_ROOT`.
 - Run events contain node IDs, types, statuses, bounded timings, and failure classes only. Do not put transcript text, audio, file contents, credentials, or prompt contents in logs.
-- Buzz/Whisper and the Nanbeige coder route share the RTX 2070 SUPER listener; the small model is served once and reused by SearXNG synthesis and M⊕ workflows.
+- Buzz/Whisper and the Nanbeige coder route share the RTX 2070 SUPER listener; the small model is served once and reused by SearXNG synthesis and Refactor Workflow Studio workflows.
 - Agent Reaction nodes accept only named commands from `WORKSPACE_AGENT_COMMANDS`; canvas text is sent over stdin and is never treated as shell syntax.
 - No implicit cloud or credential fallback is enabled.
 
-Nanbeige4.2-3B is the selected local coder route because Drew explicitly rejected Qwen 2.5 Coder. M⊕ reuses the exact alias `nanbeige4.2-3b-local` through the shared loopback listener at `127.0.0.1:8080` on the RTX 2070 SUPER. MiniMax-M3 and Ollama remain explicit alternates, not silent fallbacks.
+Nanbeige4.2-3B is the selected local coder route because Drew explicitly rejected Qwen 2.5 Coder. Refactor Workflow Studio reuses the exact alias `nanbeige4.2-3b-local` through the shared loopback listener at `127.0.0.1:8080` on the RTX 2070 SUPER. MiniMax-M3 and Ollama remain explicit alternates, not silent fallbacks.
 
 ## Directory layout
 
@@ -164,7 +164,7 @@ Every LFM generation performs `/v1/models` preflight and fails closed on an unav
 
 The right-hand **Option Catalog** is generated from the same typed registry used by `/api/options`, `/api/options/export.md`, validation tests, and the capability matrix. Phase 0 is intentionally read-only: it exposes each option's stable ID, safe default, scope, effect, approval class, persistence, evidence, privacy cost, restart impact, prerequisites, and rollback, but it cannot apply settings. Existing run, endpoint, hardware, terminal, upgrade, and feedback APIs remain authoritative until later parity-tested phases.
 
-The right-hand **Control Center** exposes named GPU/model profiles and read-only preflight. The `ollama-local-models` profile is the priority selection lane and lists exact IDs from local Ollama; the verified `nanbeige-rtx2070-super` profile remains the protected baseline. The approved RTX 5060 Ti M⊕ workspace target (`:8081` / `nanbeige4.2-3b-workspace`), dual-GPU review profile, and LFM experimental profile are data-only until an explicit activation workflow is designed and approved.
+The right-hand **Control Center** exposes named GPU/model profiles and read-only preflight. The `ollama-local-models` profile is the priority selection lane and lists exact IDs from local Ollama; the verified `nanbeige-rtx2070-super` profile remains the protected baseline. The approved RTX 5060 Ti Refactor Workflow Studio target (`:8081` / `nanbeige4.2-3b-workspace`), dual-GPU review profile, and LFM experimental profile are data-only until an explicit activation workflow is designed and approved.
 
 The current terminal surface is intentionally a **preview/classifier**, not a command runner. `POST /api/terminal/preview` rejects credentials, shell chaining, redirection, network commands, process-control commands, destructive commands, and out-of-workspace working directories. It never executes the submitted command. A future interactive terminal must add explicit process ownership, approval, cancellation, output caps, and environment filtering before execution is enabled.
 

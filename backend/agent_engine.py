@@ -70,7 +70,7 @@ def _cached_lfm_llm(base_url: str, model: str) -> ChatOpenAI:
 
 
 def get_lfm_llm() -> ChatOpenAI:
-    """Create an exact-model local client from the saved M⊕ Ollama selection."""
+    """Create an exact-model local client from the saved Refactor Workflow Studio Ollama selection."""
     return _cached_lfm_llm(_lfm_base_url(), _lfm_model())
 
 
